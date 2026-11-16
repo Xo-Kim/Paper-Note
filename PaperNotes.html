@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Notes</title>
+<style>
+:root{
+  --bg:#f6f5f2; --panel:#fff; --ink:#1f2328; --muted:#6b7078; --line:#e4e2dc; --accent:#2f6fde; --side:420px;
+  --serif:"Noto Serif KR","AppleMyungjo","Batang","Georgia",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono","Consolas",monospace;
+  --shadow:0 12px 40px rgba(0,0,0,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px var(--sans)}
+button{font:inherit;color:inherit;cursor:pointer}
+input,textarea{font:inherit;color:inherit}
+kbd,.kbtn{font-family:var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff;font-size:10.5px}
+.empty-note{color:var(--muted);text-align:center;padding:40px 20px;line-height:1.7}
+
+/* ── 상단 바 ── */
+.app{display:grid;grid-template-rows:48px 1fr;height:100vh}
+header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.ib{border:0;background:transparent;padding:6px 9px;border-radius:7px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ib:hover{background:#efeee9}
+.ib.primary{background:var(--ink);color:#fff}
+.ib.primary:hover{background:#000}
+.logo{font-weight:700;margin-right:4px}
+#title{flex:1;min-width:80px;border:0;background:transparent;font-weight:600;font-size:15px;padding:6px 8px;border-radius:7px;outline:none}
+#title:hover,#title:focus{background:#f2f1ec}
+#status{color:var(--muted);font-size:12px;white-space:nowrap}
+#status.err{color:#c4392f}
+.menu-wrap{position:relative}
+.menu{position:absolute;right:0;top:36px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px;min-width:200px;z-index:40;display:none}
+.menu.on{display:block}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:6px}
+.menu button:hover{background:#f1f0eb}
+
+/* ── 본문 ── */
+main{display:grid;grid-template-columns:1fr 6px var(--side);min-height:0}
+#reader{overflow:auto;min-height:0;position:relative}
+#doc{max-width:760px;margin:0 auto;padding:40px 48px 50vh;font:17px/1.85 var(--serif);word-break:keep-all;overflow-wrap:anywhere}
+#doc ::selection{background:rgba(47,111,222,.22)}
+#doc p.blk{margin:0 0 1em}
+#doc p.blk.jf{animation:jfb 1.6s}
+@keyframes jfb{0%,50%{background:rgba(47,111,222,.14)}100%{background:transparent}}
+#doc .jflash{position:absolute;background:rgba(47,111,222,.3);border-radius:3px;animation:jfa 1.6s forwards;pointer-events:none}
+@keyframes jfa{0%,55%{opacity:1}100%{opacity:0}}
+#doc .pg{font:11px var(--sans);color:var(--muted);text-align:center;margin:28px 0 18px;user-select:none;letter-spacing:.08em}
+#doc .pg::before,#doc .pg::after{content:"";display:inline-block;width:60px;height:1px;background:var(--line);vertical-align:middle;margin:0 10px}
+mark.an{background:none;color:inherit;cursor:pointer;padding:0;text-decoration:underline 2px;text-underline-offset:4px}
+#welcome{max-width:520px;margin:12vh auto;text-align:center;font-family:var(--sans);color:var(--muted);line-height:1.8;padding:0 20px}
+#welcome h2{color:var(--ink);font-size:22px;margin-bottom:6px}
+/* PDF 원문 보기: canvas + 선택용 텍스트 레이어 + 밑줄 레이어 */
+#doc.pdfmode{max-width:none;padding:20px 24px 40vh;display:flex;flex-direction:column;align-items:flex-start;gap:14px;font-family:var(--sans);width:max-content;min-width:100%}
+#doc .page{position:relative;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.14);flex:0 0 auto;margin:0 auto}
+#doc .page canvas{position:absolute;inset:0;width:100%;height:100%}
+#doc .alayer{position:absolute;inset:0;z-index:1;pointer-events:none}
+#doc .pa{position:absolute;mix-blend-mode:multiply;border-radius:2px}
+.textLayer{position:absolute;text-align:initial;inset:0;overflow:hidden;line-height:1;text-size-adjust:none;-webkit-text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}
+.textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+.textLayer span.markedContent{top:0;height:0}
+.textLayer ::selection{background:rgba(47,111,222,.3)}
+.textLayer br::selection{background:transparent}
+.textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:-1;cursor:default;user-select:none}
+.textLayer .endOfContent.active{top:0}
+#vt{position:sticky;top:10px;z-index:6;height:0;display:flex;justify-content:flex-end;padding-right:18px;pointer-events:none}
+#vt[hidden]{display:none}
+#vt .bar{pointer-events:auto;display:flex;gap:2px;align-items:center;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:0 2px 10px rgba(0,0,0,.08);height:34px}
+#vt button{border:0;background:none;border-radius:6px;padding:4px 9px;font-size:12.5px}
+#vt button.on{background:var(--ink);color:#fff}
+#vt .sep{width:1px;height:16px;background:var(--line);margin:0 3px}
+.resizer{cursor:col-resize;border-left:1px solid var(--line)}
+.resizer:hover,.resizer.drag{background:rgba(47,111,222,.15)}
+
+/* ── 사이드: 탭 · 주석 목록 ── */
+aside{background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line)}
+.tab{border:0;background:none;padding:8px 12px;border-bottom:2px solid transparent;color:var(--muted);font-weight:600}
+.tab.on{color:var(--ink);border-bottom-color:var(--ink)}
+.pane{flex:1;overflow:auto;min-height:0;display:none}
+.pane.on{display:block}
+.alist{padding:12px}
+.ai{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.ai:hover{background:#fafaf7}
+.ai .pn{font-size:11px;color:var(--muted);margin-bottom:3px}
+.ai .q{font:13.5px var(--serif);color:#333;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ai .w{font:600 16px var(--serif)}
+.ai .c{margin-top:6px;font-size:13px;color:#7a4a12;background:#fff6ea;border-radius:6px;padding:5px 8px;white-space:pre-wrap}
+.ai .adel{position:absolute;top:8px;right:8px;border:0;background:#fdeceb;color:#c4392f;border-radius:6px;padding:3px 8px;font-size:12px;opacity:0}
+.ai:hover .adel{opacity:1}
+.hint{font-size:11.5px;color:var(--muted);padding:8px 22px;border-top:1px solid var(--line);background:#fbfbf9}
+
+/* ── 노트 편집기 (블록) ── */
+#notes{padding:18px 22px 40vh 30px;font-size:14.5px;line-height:1.7;min-height:100%;cursor:text}
+#notes.selecting{user-select:none}
+.nb{position:relative;border-radius:5px;min-height:1.7em;margin:1px 0}
+.nb.r{padding:2px 4px}
+.nb.r:hover{background:#f7f6f2}
+.nb.sel{background:rgba(47,111,222,.13)!important}
+.nb.sel img{outline:2px solid rgba(47,111,222,.55);outline-offset:1px}
+.nb.dragging{opacity:.4}
+.nb.drop-b{box-shadow:0 -2px 0 var(--accent)}
+.nb.drop-a{box-shadow:0 2px 0 var(--accent)}
+.nb.ph::before{content:attr(data-ph);color:#a3a6ab;position:absolute;left:4px;top:2px;pointer-events:none}
+.nb .hd{position:absolute;top:3px;opacity:0;cursor:grab;color:#b0b2b6;user-select:none;font-size:12px;letter-spacing:-2px;padding:0 4px;border-radius:4px;line-height:1.6}
+.nb:hover>.hd,.nb.e>.hd{opacity:1}
+.nb .hd:hover{background:#ecebe6;color:#666}
+.nb textarea{width:100%;border:0;outline:none;resize:none;background:#f6f5f1;border-radius:5px;padding:2px 4px;font:inherit;line-height:1.7;overflow:hidden;display:block}
+.nb .erow{display:flex;align-items:flex-start;gap:7px}
+.nb .erow textarea{flex:1}
+.nb .emk,.nb .li .mk{flex:0 0 auto;min-width:14px;text-align:center;color:#555}
+.nb .emk{padding-top:2px}
+.nb .emk input{margin:6px 0 0}
+.nb.k-h1 textarea{font-size:1.5em;font-weight:700;line-height:1.35}
+.nb.k-h2 textarea{font-size:1.25em;font-weight:700;line-height:1.35}
+.nb.k-h3 textarea{font-size:1.08em;font-weight:700;line-height:1.4}
+.nb.k-q textarea{border-left:3px solid #c9c6bd;border-radius:0 5px 5px 0;padding-left:10px;color:#454a51}
+.nb.k-code textarea{font-family:var(--mono);font-size:13px}
+.nb .prev{padding:4px 6px 2px;border-left:2px solid var(--line);margin:4px 0 2px 2px;color:#333}
+.nb h1,.nb h2,.nb h3{margin:.5em 0 .1em;line-height:1.35}
+.nb h1{font-size:1.5em}.nb h2{font-size:1.25em}.nb h3{font-size:1.08em}
+.nb p{margin:0}
+.nb blockquote{margin:0;padding:1px 0 1px 12px;border-left:3px solid #c9c6bd;color:#454a51}
+.nb pre{background:#f4f3ee;border-radius:6px;padding:10px 12px;overflow:auto;margin:2px 0;font-size:12.5px}
+.nb code{font-family:var(--mono);font-size:.9em;background:#f0efea;padding:1px 4px;border-radius:4px}
+.nb pre code{background:none;padding:0}
+.nb hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.nb .li{display:flex;gap:7px}
+.nb .li input{margin:5px 0 0}
+.nb .li.done .tx{color:#999;text-decoration:line-through}
+.nb a{color:var(--accent)}
+.nb a.jump{font-size:11.5px;background:#eef3fd;border-radius:5px;padding:1px 6px;margin-left:5px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.nb a.jump:hover{background:#dce7fb}
+.nb mark.nh{background:#fff1a8;border-radius:2px}
+.nb img{max-width:100%;border-radius:6px;display:block;margin:4px 0}
+.nb img.miss{color:#c4392f;font-size:12px}
+.m.pending{font-family:var(--mono);font-size:.9em;color:#7a4fb5}
+.m.err{color:#c4392f}
+.m mjx-container{margin:0!important}
+.mdisp{text-align:center;margin:6px 0;overflow-x:auto}
+
+/* ── 떠 있는 것들: 선택 툴바 · 툴팁 · 밑줄 편집 팝업 ── */
+#tb{position:fixed;z-index:50;display:none;background:var(--ink);color:#fff;border-radius:10px;padding:4px;gap:2px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+#tb.on{display:flex}
+#tb button{border:0;background:none;color:#fff;border-radius:7px;padding:5px 8px;font-size:13px}
+#tb button:hover{background:rgba(255,255,255,.14)}
+#tb .dot{width:24px;height:24px;padding:0;display:grid;place-items:center}
+#tb .dot i{width:16px;height:4px;border-radius:2px;display:block;margin-top:8px}
+#tb .sep{width:1px;height:18px;background:rgba(255,255,255,.2);margin:0 3px}
+#tip{position:fixed;z-index:55;display:none;max-width:320px;background:#fffdf8;border:1px solid #ecd9bd;border-radius:9px;padding:9px 11px;box-shadow:0 8px 24px rgba(0,0,0,.12);font-size:13px;line-height:1.55;white-space:pre-wrap;pointer-events:none}
+#tip .tq{color:var(--muted);font-size:11.5px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tip .tc+.tc{border-top:1px dashed #ecd9bd;margin-top:6px;padding-top:6px}
+#pop{position:fixed;z-index:60;display:none;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px}
+#pop .q{font:12.5px var(--serif);color:var(--muted);margin-bottom:8px;max-height:3.2em;overflow:hidden}
+#pop .row{display:flex;gap:6px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--muted)}
+#pop .cdot{width:20px;height:20px;border-radius:50%;border:2px solid transparent;padding:0}
+#pop .cdot.on{border-color:var(--ink)}
+#pop textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;outline:none;font-size:13.5px;line-height:1.55}
+#pop textarea:focus{border-color:var(--accent)}
+#pop .acts{display:flex;justify-content:space-between;margin-top:8px}
+#pop .acts button{border:0;background:#f1f0eb;border-radius:7px;padding:5px 10px;font-size:12.5px}
+#pop .acts .del{color:#c4392f;background:#fdeceb}
+
+/* ── 서랍 · 대화상자 ── */
+.scrim{position:fixed;inset:0;background:rgba(20,22,26,.32);z-index:70;display:none}
+.scrim.on{display:block}
+#drawer{position:fixed;left:0;top:0;bottom:0;width:340px;background:var(--panel);z-index:71;transform:translateX(-100%);transition:transform .18s ease;display:flex;flex-direction:column;box-shadow:4px 0 30px rgba(0,0,0,.1)}
+#drawer.on{transform:none}
+#drawer h3{margin:0;padding:16px 18px 10px;font-size:15px}
+#lib{flex:1;overflow:auto;padding:0 10px 14px}
+.lp{display:flex;align-items:center;gap:6px;padding:10px;border-radius:9px;cursor:pointer}
+.lp:hover{background:#f4f3ee}
+.lp.cur{background:#eef3fd}
+.lp .t{flex:1;min-width:0}
+.lp .t b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp .t small{color:var(--muted)}
+.lp .x{border:0;background:none;color:var(--muted);border-radius:6px;padding:3px 7px;font-size:12px;visibility:hidden}
+.lp:hover .x,.lp .x.armed{visibility:visible}
+.lp .x.armed{background:#fdeceb;color:#c4392f}
+.dlg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,94vw);max-height:90vh;overflow:auto;background:var(--panel);border-radius:14px;z-index:72;padding:22px;display:none;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.dlg.on{display:block}
+.dlg h3{margin:0 0 14px}
+.dlg label{display:block;font-size:12.5px;color:var(--muted);margin:12px 0 6px}
+.dlg input[type=text],.dlg textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none}
+.dlg textarea{height:180px;resize:vertical;font-family:var(--serif);line-height:1.6}
+#drop{border:1.5px dashed #c9c6bd;border-radius:11px;padding:20px;text-align:center;color:var(--muted);cursor:pointer}
+#drop.over{border-color:var(--accent);background:#f2f6fe}
+#drop b{color:var(--ink)}
+.mfoot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:8px}
+.mfoot .msg{color:var(--muted);font-size:12.5px}
+#kmodal{width:min(440px,94vw)}
+#kmodal .ksub{color:var(--muted);font-size:12.5px;line-height:1.6;margin:-8px 0 12px}
+.krow{display:flex;align-items:center;justify-content:space-between;padding:7px 2px;border-bottom:1px solid #f0efea}
+.krow .kl{display:flex;align-items:center;gap:8px}
+.krow .kl i{width:12px;height:12px;border-radius:50%}
+.kbtn{min-width:96px;background:#fafaf7;border-radius:7px;border-bottom-width:1px;padding:5px 10px;font-size:12.5px}
+.kbtn.rec{border-color:var(--accent);background:#eef3fd;color:var(--accent)}
+.kbtn.none{color:#aaa}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:9px;z-index:90;font-size:13px;display:none}
+#toast.on{display:block}
+#dropov{position:fixed;inset:10px;border:2.5px dashed var(--accent);border-radius:16px;background:rgba(242,246,254,.88);z-index:95;display:none;place-items:center;font-size:18px;font-weight:600;color:var(--accent);pointer-events:none}
+#dropov.on{display:grid}
+@media (max-width:820px){
+  main{grid-template-columns:1fr;grid-template-rows:1fr 45vh}
+  .resizer,.hide-sm{display:none}
+  aside{border-top:1px solid var(--line)}
+  #doc{padding:24px 20px 30vh}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <button class="ib" id="bLib" title="논문 목록">☰</button>
+    <span class="logo hide-sm">Paper Notes</span>
+    <input id="title" placeholder="제목 없음" spellcheck="false" disabled>
+    <span id="status">준비 중…</span>
+    <button class="ib" id="bDir" hidden>📁 폴더 연결</button>
+    <button class="ib primary" id="bNew">＋ 새 논문</button>
+    <div class="menu-wrap">
+      <button class="ib" id="bMore" title="내보내기·가져오기">⋯</button>
+      <div class="menu" id="menu">
+        <button data-act="md">노트 + 주석 내보내기 (.md)</button>
+        <button data-act="copymd">노트 + 주석 Markdown 복사</button>
+        <button data-act="json">이 논문 백업 (.json)</button>
+        <button data-act="import">백업 불러오기 (.json)</button>
+        <button data-act="keys">⌨ 단축키 설정</button>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section id="reader">
+      <div id="vt" hidden><div class="bar">
+        <button data-v="pdf">원문</button><button data-v="text">텍스트</button><span class="sep"></span>
+        <button data-z="-1" title="축소">−</button><button data-z="0" id="zlbl" title="화면 너비에 맞춤">100%</button><button data-z="1" title="확대">＋</button>
+      </div></div>
+      <div id="doc"></div>
+    </section>
+    <div class="resizer" id="rz"></div>
+    <aside>
+      <div class="tabs">
+        <button class="tab on" data-tab="notes">노트</button>
+        <button class="tab" data-tab="annots">밑줄 <span id="n-annots"></span></button>
+        <button class="tab" data-tab="concept">개념 <span id="n-concept"></span></button>
+        <button class="tab" data-tab="vocab">단어 <span id="n-vocab"></span></button>
+      </div>
+      <div class="pane on" id="p-notes"><div id="notes"></div></div>
+      <div class="pane" id="p-annots"><div class="alist" id="l-annots"></div></div>
+      <div class="pane" id="p-concept"><div class="alist" id="l-concept"></div></div>
+      <div class="pane" id="p-vocab"><div class="alist" id="l-vocab"></div></div>
+      <div class="hint"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> 수식 · <kbd>$$</kbd> 블록 수식 · <kbd>Enter</kbd> 새 블록 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 · <kbd>Tab</kbd> 들여쓰기 · <kbd>⋮⋮</kbd> 끌어서 이동 · 드래그로 블록 선택 → <kbd>Del</kbd> 삭제 · <kbd>Esc</kbd> 완료 · 이미지는 붙여넣기/끌어놓기</div>
+    </aside>
+  </main>
+</div>
+
+<div id="tb">
+  <button class="dot" data-act="hl_r"><i style="background:#e5484d"></i></button>
+  <button class="dot" data-act="hl_b"><i style="background:#2f6fde"></i></button>
+  <button class="dot" data-act="hl_g"><i style="background:#2e9e4a"></i></button>
+  <span class="sep"></span>
+  <button data-act="note">❝ 노트로</button>
+</div>
+<div id="tip"></div>
+<div id="pop"></div>
+<div class="scrim" id="scrim"></div>
+<div id="drawer"><h3>내 논문</h3><div id="lib"></div></div>
+<div class="dlg" id="modal">
+  <h3>새 논문 추가</h3>
+  <div id="drop"></div>
+  <input type="file" id="fPdf" accept="application/pdf" hidden>
+  <label>또는 본문 텍스트 붙여넣기</label>
+  <textarea id="mText" placeholder="논문 본문을 붙여넣으세요. 빈 줄로 문단을 구분합니다."></textarea>
+  <label>제목</label>
+  <input type="text" id="mTitle" placeholder="논문 제목">
+  <div class="mfoot"><span class="msg" id="mMsg"></span><span><button class="ib" id="mCancel">취소</button> <button class="ib primary" id="mOk">만들기</button></span></div>
+</div>
+<div class="dlg" id="kmodal">
+  <h3>단축키 설정</h3>
+  <p class="ksub">본문을 드래그해 선택한 상태에서 누르면 적용돼요. 칸을 클릭한 뒤 원하는 키(조합)를 누르세요. <kbd>Backspace</kbd> 지우기 · <kbd>Esc</kbd> 취소</p>
+  <div id="klist"></div>
+  <div class="mfoot"><button class="ib" id="kReset">기본값으로</button><button class="ib primary" id="kClose">완료</button></div>
+</div>
+<input type="file" id="fJson" accept="application/json,.json" hidden>
+<div id="toast"></div>
+<div id="dropov">📄 PDF를 놓으면 논문으로 불러와요</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ════════════════ 1. 유틸 · 상수 ════════════════ */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const ls = {
+  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+  del: k => { try { localStorage.removeItem(k); } catch {} },
+};
+function toast(msg, ms = 2200) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), ms);
+}
+const loadScript = src => new Promise((res, rej) => {
+  const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("load " + src));
+  document.head.appendChild(s);
+});
+const restartAnim = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+// 떠 있는 요소를 기준 사각형 아래(공간 없으면 위)에 화면 안으로 배치
+function place(el, r, gap = 8, minTop = 8) {
+  const w = el.offsetWidth, h = el.offsetHeight;
+  let y = r.bottom + gap; if (y + h > innerHeight - 8) y = Math.max(minTop, r.top - h - gap);
+  el.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left)) + "px"; el.style.top = y + "px";
+}
+
+// 밑줄 색 = 분류. 빨강 → 개념(필기), 파랑 → 단어(뜻), 초록 → 일반 밑줄
+const COLORS = { r: {line: "#e5484d"}, b: {line: "#2f6fde"}, g: {line: "#2e9e4a"} };
+const hasMemo = a => a.color === "r" || a.color === "b";
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+const MATHJAX = "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js";
+const DATA_DIR = "papers";
+
+/* ════════════════ 2. 저장소 ════════════════
+ * 기본은 IndexedDB(브라우저 안). 폴더를 연결하면(File System Access API, Chrome/Edge)
+ *   <선택 위치>/papers/<제목>/{paper.json, <제목>.md, original.pdf, images/}
+ * 로 저장. .md는 Notion 가져오기용, paper.json은 앱 데이터. */
+const idbReq = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const safeTitle = t => (t || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").replace(/^[.\s]+|[.\s]+$/g, "").slice(0, 60) || "paper";
+async function readJson(dh, name) { try { return JSON.parse(await (await (await dh.getFileHandle(name)).getFile()).text()); } catch { return null; } }
+async function writeFile(dh, name, data) {
+  const w = await (await dh.getFileHandle(name, {create: true})).createWritable(); await w.write(data); await w.close();
+}
+
+const Store = {
+  idb: null, dir: null, pendingDir: null, texts: {}, urls: new Map(),
+  os(name, rw) { return this.idb.transaction(name, rw ? "readwrite" : "readonly").objectStore(name); },
+
+  async init() {
+    const r = indexedDB.open("paper-notes", 3);
+    r.onupgradeneeded = () => ["papers", "texts", "kv", "imgs"].forEach(n =>
+      r.result.objectStoreNames.contains(n) || r.result.createObjectStore(n, n === "papers" ? {keyPath: "id"} : undefined));
+    this.idb = await idbReq(r);
+    navigator.storage?.persist?.()?.catch(() => {});
+    if (!window.showDirectoryPicker) return;
+    const h = await idbReq(this.os("kv").get("dir")).catch(() => null);   // 이전에 연결한 폴더
+    if (h) (await h.queryPermission({mode: "readwrite"})) === "granted" ? this.dir = h : this.pendingDir = h;
+  },
+
+  async connect(pick) {
+    let h = pick ? null : this.pendingDir;
+    if (h) { if ((await h.requestPermission({mode: "readwrite"})) !== "granted") return false; }
+    else h = await (await showDirectoryPicker({mode: "readwrite", id: "paper-notes"})).getDirectoryHandle(DATA_DIR, {create: true});
+    await idbReq(this.os("kv", 1).put(h, "dir"));
+    // 처음 연결할 때: 브라우저에만 있던 논문(이미지·PDF 포함)을 폴더로 옮겨 담기
+    const local = this.dir ? [] : await idbReq(this.os("papers").getAll());
+    this.dir = h; this.pendingDir = null; this.urls.clear();
+    const have = new Set((await this.list()).map(p => p.id));
+    for (const m of local) {
+      if (have.has(m.id)) continue;
+      m.dir = await this.uniqueDir(safeTitle(m.title));
+      this.texts[m.id] = (await idbReq(this.os("texts").get(m.id))) || [];
+      await this.saveMeta(m);
+      for (const k of await idbReq(this.os("imgs").getAllKeys(IDBKeyRange.bound(m.id + "/", m.id + "/￿")))) {
+        const name = k.slice(m.id.length + 1);
+        await this.putFile(m, name.startsWith("__file__/") ? name.slice(9) : "images/" + name, await idbReq(this.os("imgs").get(k)));
+      }
+    }
+    return true;
+  },
+
+  async uniqueDir(base) {
+    const names = new Set(); for await (const n of this.dir.keys()) names.add(n);
+    let n = base, k = 2; while (names.has(n)) n = `${base} (${k++})`;
+    return n;
+  },
+
+  async list() {
+    if (!this.dir) return idbReq(this.os("papers").getAll());
+    const out = [];
+    for await (const [name, h] of this.dir.entries()) {
+      if (h.kind !== "directory") continue;
+      const o = await readJson(h, "paper.json");
+      let m = o?.meta, blocks = o?.blocks;
+      if (!m) { m = await readJson(h, "meta.json"); blocks = await readJson(h, "text.json"); }   // 이전 버전 형식
+      if (!m?.id || m.deleted) continue;
+      m.dir = name; this.texts[m.id] = blocks || []; out.push(m);
+    }
+    return out;
+  },
+
+  async saveMeta(m) {
+    if (!this.dir) return idbReq(this.os("papers", 1).put(m));
+    const dh = await this.dir.getDirectoryHandle(m.dir, {create: true});
+    await writeFile(dh, "paper.json", JSON.stringify({v: 2, meta: m, blocks: this.texts[m.id] || []}));
+    await writeFile(dh, m.dir + ".md", exportMd(m));
+  },
+  async saveText(m, blocks) {   // 폴더 모드에서는 saveMeta가 paper.json에 함께 기록
+    this.texts[m.id] = blocks;
+    if (!this.dir) await idbReq(this.os("texts", 1).put(blocks, m.id));
+  },
+  async loadText(m) {
+    return this.dir ? this.texts[m.id] || [] : (await idbReq(this.os("texts").get(m.id))) || [];
+  },
+
+  // 첨부 파일. path = "original.pdf" 또는 "images/<파일>" (IndexedDB 키는 이전 버전과 같은 형식)
+  idbKey: (m, path) => m.id + "/" + (path.startsWith("images/") ? path.slice(7) : "__file__/" + path),
+  async fsDir(m, path, create) {
+    const parts = path.split("/");
+    let dh = await this.dir.getDirectoryHandle(m.dir, {create});
+    if (parts.length > 1) dh = await dh.getDirectoryHandle(parts[0], {create});
+    return [dh, parts.at(-1)];
+  },
+  async putFile(m, path, blob) {
+    if (!this.dir) return idbReq(this.os("imgs", 1).put(blob, this.idbKey(m, path)));
+    const [dh, name] = await this.fsDir(m, path, true); await writeFile(dh, name, blob);
+  },
+  async getFile(m, path) {
+    try {
+      if (!this.dir) return (await idbReq(this.os("imgs").get(this.idbKey(m, path)))) || null;
+      const [dh, name] = await this.fsDir(m, path, false); return await (await dh.getFileHandle(name)).getFile();
+    } catch { return null; }
+  },
+  async imageURL(m, name) {
+    const k = m.id + "/" + name;
+    if (!this.urls.has(k)) {
+      const b = await this.getFile(m, "images/" + name); if (!b) throw new Error("not found");
+      this.urls.set(k, URL.createObjectURL(b));
+    }
+    return this.urls.get(k);
+  },
+
+  async remove(m) {
+    // 폴더 모드: 파일은 그대로 두고 목록에서만 숨김 (폴더는 사용자가 직접 삭제)
+    if (this.dir) { m.deleted = Date.now(); await this.saveMeta(m); return "soft"; }
+    await idbReq(this.os("papers", 1).delete(m.id));
+    await idbReq(this.os("texts", 1).delete(m.id));
+    await idbReq(this.os("imgs", 1).delete(IDBKeyRange.bound(m.id + "/", m.id + "/￿")));
+  },
+};
+
+/* ════════════════ 3. 상태 · 자동 저장 ════════════════ */
+let papers = [];     // 논문 목록(meta)
+let meta = null;     // 열린 논문 {id, title, created, updated, src, annots, notes, dir?}
+let blocks = [];     // 본문 [{k:'p'|'g', t}]  (g = 쪽 구분선)
+let lastColor = "r";
+let saveTimer = null, saving = false, dirty = false;
+
+function setStatus(txt, err) { const s = $("#status"); s.textContent = txt; s.classList.toggle("err", !!err); }
+function idleStatus() { setStatus(Store.dir ? "저장됨 · 폴더" : "저장됨 · 브라우저"); updDirBtn(); }
+const schedule = ms => { clearTimeout(saveTimer); saveTimer = setTimeout(flush, ms); };
+function touch() { if (!meta) return; meta.updated = Date.now(); dirty = true; setStatus("편집 중…"); schedule(700); }
+async function flush() {
+  if (!meta || !dirty) return;
+  if (saving) return schedule(400);
+  saving = true; dirty = false; setStatus("저장 중…");
+  try { await Store.saveMeta(meta); idleStatus(); }
+  catch { dirty = true; setStatus("저장 실패 — 다시 시도 중", true); schedule(3000); }
+  finally { saving = false; }
+}
+addEventListener("beforeunload", () => { if (dirty) flush(); });
+
+/* ════════════════ 4. 본문 보기 (텍스트) ════════════════ */
+const doc = $("#doc"), reader = $("#reader");
+let pdfDoc = null, viewMode = "text", pdfScale = 1, pdfObs = null, docReady = Promise.resolve();
+let pdfZoom = +ls.get("pn:zoom"); if (!(pdfZoom >= .5 && pdfZoom <= 3)) pdfZoom = 1;
+const isPdfView = () => viewMode === "pdf" && !!pdfDoc;
+
+function welcome(title, body, btnSel, btnLabel) {
+  doc.innerHTML = `<div id="welcome"><h2>${title}</h2>${body}<br><br><button class="ib primary">${btnLabel}</button></div>`;
+  doc.querySelector("#welcome button").onclick = () => $(btnSel).click();
+}
+
+function renderDoc() {
+  hideTb(); hidePop(); updVt();
+  if (!meta) {
+    doc.classList.remove("pdfmode");
+    return Store.pendingDir
+      ? welcome("저장 폴더 접근을 허용해 주세요", "보안을 위해 브라우저를 다시 열 때마다 한 번씩 허용이 필요해요.", "#bDir", "📁 폴더 다시 연결")
+      : welcome("논문을 읽으면서 바로 표시하고 메모하세요",
+          "PDF를 이 화면에 끌어놓거나, 본문을 붙여넣으면 시작할 수 있어요.<br>문장을 드래그하면 밑줄 · 노트 인용 메뉴가 뜹니다.", "#bNew", "＋ 첫 논문 추가");
+  }
+  if (isPdfView()) { docReady = renderPdfPages(); return; }
+  doc.classList.remove("pdfmode");
+  const frag = document.createDocumentFragment();
+  blocks.forEach((b, i) => {
+    const el = document.createElement(b.k === "g" ? "div" : "p");
+    el.className = b.k === "g" ? "pg" : "blk"; el.dataset.b = i;
+    if (b.k === "g") el.textContent = b.t;
+    frag.appendChild(el);
+  });
+  doc.replaceChildren(frag);
+  blocks.forEach((_, i) => renderBlock(i));
+}
+
+const blockEl = i => doc.querySelector(`[data-b="${i}"]`);
+// 문단 안의 밑줄 구간을 <mark>로 감쌈 (겹치면 나중에 그은 색)
+function renderBlock(i) {
+  const el = blockEl(i); if (!el || blocks[i].k === "g") return;
+  const t = blocks[i].t, rs = [];
+  for (const a of meta.annots) for (const r of a.ranges || []) if (r.b === i) rs.push({...r, a});
+  if (!rs.length) { el.textContent = t; return; }
+  const cuts = [...new Set([0, t.length, ...rs.flatMap(r => [r.s, r.e])])].sort((x, y) => x - y);
+  let h = "";
+  for (let k = 0; k < cuts.length - 1; k++) {
+    const s = cuts[k], e = cuts[k + 1], seg = esc(t.slice(s, e)), cov = rs.filter(r => r.s <= s && r.e >= e);
+    h += !cov.length ? seg
+      : `<mark class="an" data-ids="${cov.map(r => r.a.id).join(" ")}" style="text-decoration-color:${COLORS[cov.at(-1).a.color].line}">${seg}</mark>`;
+  }
+  el.innerHTML = h;
+}
+const rerender = a => a.pdf ? new Set(a.pdf.map(r => r.p)).forEach(drawPdfAnnots) : new Set(a.ranges.map(r => r.b)).forEach(renderBlock);
+const annotsOf = mark => { const ids = mark.dataset.ids.split(" "); return meta.annots.filter(a => ids.includes(a.id)); };
+
+// 텍스트 선택 → [{b:문단, s, e}]
+function offsetIn(el, node, off) { const r = document.createRange(); r.setStart(el, 0); r.setEnd(node, off); return r.toString().length; }
+function selRanges() {
+  const sel = getSelection(); if (!sel.rangeCount || sel.isCollapsed) return null;
+  const R = sel.getRangeAt(0); if (!doc.contains(R.commonAncestorContainer)) return null;
+  const out = [];
+  doc.querySelectorAll("p.blk").forEach(el => {
+    if (!R.intersectsNode(el)) return;
+    const i = +el.dataset.b, t = blocks[i].t;
+    let s = el.contains(R.startContainer) ? offsetIn(el, R.startContainer, R.startOffset) : 0;
+    let e = el.contains(R.endContainer) ? offsetIn(el, R.endContainer, R.endOffset) : t.length;
+    while (s < e && /\s/.test(t[s])) s++;
+    while (e > s && /\s/.test(t[e - 1])) e--;
+    if (e > s) out.push({b: i, s, e});
+  });
+  return out.length ? out : null;
+}
+
+/* ════════════════ 5. 본문 보기 (PDF 원문) ════════════════
+ * 원본 쪽(canvas) + 선택 가능한 텍스트 레이어 + 밑줄 레이어(쪽 기준 0~1 좌표) */
+async function loadPdfJs() {
+  if (window.pdfjsLib) return;
+  await loadScript(PDFJS + "pdf.min.js");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js";
+  try {   // file:// 에서도 워커가 돌도록 Blob 워커로 감쌈
+    pdfjsLib.GlobalWorkerOptions.workerPort = new Worker(URL.createObjectURL(new Blob([`importScripts("${PDFJS}pdf.worker.min.js");`], {type: "text/javascript"})));
+  } catch {}
+}
+async function openPdf(file) {
+  await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  // cMap: 한글 등 CJK 글꼴 PDF의 글자 추출에 필요
+  const opt = x => ({data: new Uint8Array(buf.slice(0)), cMapUrl: PDFJS + "cmaps/", cMapPacked: true, standardFontDataUrl: PDFJS + "standard_fonts/", ...x});
+  try { return await pdfjsLib.getDocument(opt({})).promise; }
+  catch { pdfjsLib.GlobalWorkerOptions.workerPort = null; return await pdfjsLib.getDocument(opt({disableWorker: true})).promise; }
+}
+async function loadPdfFor(m) {
+  pdfDoc = null;
+  if (m.src !== "pdf") return;
+  try { const f = await Store.getFile(m, "original.pdf"); if (f) pdfDoc = await openPdf(f); } catch { pdfDoc = null; }
+}
+
+function updVt() {
+  const vt = $("#vt");
+  vt.hidden = !(meta && pdfDoc);
+  vt.querySelectorAll("[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === viewMode));
+  vt.querySelectorAll("[data-z],.sep").forEach(b => b.style.display = viewMode === "pdf" ? "" : "none");
+  $("#zlbl").textContent = Math.round(pdfZoom * 100) + "%";
+}
+function setView(v) { if (!meta) return; viewMode = v; ls.set("pn:view:" + meta.id, v); hideTip(); reader.scrollTop = 0; renderDoc(); }
+$("#vt").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.v) { if (b.dataset.v !== viewMode) setView(b.dataset.v); return; }
+  const z = +b.dataset.z, rel = reader.scrollTop / Math.max(1, reader.scrollHeight);
+  pdfZoom = z === 0 ? 1 : Math.max(.5, Math.min(3, Math.round((pdfZoom + z * .15) * 100) / 100));
+  ls.set("pn:zoom", pdfZoom);
+  renderDoc(); docReady.then(() => reader.scrollTop = rel * reader.scrollHeight);
+});
+
+async function renderPdfPages() {
+  doc.classList.add("pdfmode"); pdfObs?.disconnect();
+  const pdf = pdfDoc, v1 = (await pdf.getPage(1)).getViewport({scale: 1});
+  if (pdf !== pdfDoc) return;
+  pdfScale = Math.min(Math.max(320, reader.clientWidth - 48), 1000) / v1.width * pdfZoom;
+  const frag = document.createDocumentFragment();
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const d = document.createElement("div"); d.className = "page"; d.dataset.page = n;
+    d.style.width = v1.width * pdfScale + "px"; d.style.height = v1.height * pdfScale + "px";
+    frag.appendChild(d);
+  }
+  doc.replaceChildren(frag);
+  // 화면 근처에 온 쪽만 그림
+  pdfObs = new IntersectionObserver(es => es.forEach(en => en.isIntersecting && renderPage(en.target, pdf)), {root: reader, rootMargin: "1200px 0px"});
+  doc.querySelectorAll(".page").forEach(d => pdfObs.observe(d));
+}
+async function renderPage(div, pdf) {
+  if (div.dataset.r || pdf !== pdfDoc) return; div.dataset.r = "1";
+  const n = +div.dataset.page, page = await pdf.getPage(n), vp = page.getViewport({scale: pdfScale});
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  div.style.width = vp.width + "px"; div.style.height = vp.height + "px"; div.style.setProperty("--scale-factor", pdfScale);
+  const cv = document.createElement("canvas"); cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+  const al = document.createElement("div"); al.className = "alayer";
+  const tl = document.createElement("div"); tl.className = "textLayer";
+  div.replaceChildren(cv, al, tl);
+  drawPdfAnnots(n);
+  try {
+    await page.render({canvasContext: cv.getContext("2d"), viewport: page.getViewport({scale: pdfScale * dpr})}).promise;
+    await pdfjsLib.renderTextLayer({textContentSource: await page.getTextContent(), container: tl, viewport: vp, textDivs: []}).promise;
+    const eoc = document.createElement("div"); eoc.className = "endOfContent"; tl.appendChild(eoc);
+  } catch {}
+}
+function drawPdfAnnots(n) {
+  const al = doc.querySelector(`.page[data-page="${n}"] .alayer`); if (!al || !meta) return;
+  al.innerHTML = meta.annots.filter(a => a.pdf).flatMap(a => a.pdf.filter(r => r.p === n).map(r =>
+    `<div class="pa" data-aid="${a.id}" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;border-bottom:2px solid ${COLORS[a.color].line}"></div>`)).join("");
+}
+
+// PDF 텍스트 레이어는 대체 글꼴로 그려져 글자 위치가 1~2자 어긋날 수 있음 → 선택을 단어 경계에 맞춤
+// (단어 끝 한 글자만 걸친 쪽은 버리고, 단어 중간에서 시작/끝나면 단어 전체로)
+function snapToWords(R) {
+  const isW = c => !!c && /[\p{L}\p{N}_]/u.test(c), r = R.cloneRange();
+  let sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
+  if (sc.nodeType === 3) {
+    const t = sc.textContent;
+    if (isW(t[so]) && so > 0 && isW(t[so - 1]) && !isW(t[so + 1])) { so++; while (so < t.length && !isW(t[so])) so++; }
+    else while (so > 0 && isW(t[so]) && isW(t[so - 1])) so--;
+  }
+  if (ec.nodeType === 3) {
+    const t = ec.textContent;
+    if (eo > 1 && eo < t.length && isW(t[eo - 1]) && isW(t[eo]) && !isW(t[eo - 2])) { eo--; while (eo > 0 && !isW(t[eo - 1])) eo--; }
+    else while (eo > 0 && eo < t.length && isW(t[eo - 1]) && isW(t[eo])) eo++;
+  }
+  try { r.setStart(sc, so); r.setEnd(ec, eo); } catch { return R; }
+  return r.collapsed || !r.toString().trim() ? R : r;
+}
+// PDF 선택 → {pdf:[쪽별 사각형(0~1)], text}
+function selPdf() {
+  const sel = getSelection(); if (!sel.rangeCount || sel.isCollapsed) return null;
+  let R = sel.getRangeAt(0); if (!doc.contains(R.commonAncestorContainer)) return null;
+  R = snapToWords(R); sel.removeAllRanges(); sel.addRange(R);   // 보정된 범위를 화면에도 표시
+  const text = sel.toString().replace(/\s+/g, " ").trim(); if (!text) return null;
+  const ca = R.commonAncestorContainer, nodes = [];
+  if (ca.nodeType === 3) nodes.push(ca);
+  else { const tw = document.createTreeWalker(ca, NodeFilter.SHOW_TEXT); let nd; while ((nd = tw.nextNode())) if (R.intersectsNode(nd)) nodes.push(nd); }
+  const pages = $$("#doc .page").map(d => ({n: +d.dataset.page, b: d.getBoundingClientRect()}));
+  const out = [];
+  for (const nd of nodes) {
+    if (!nd.parentElement?.closest(".textLayer") || !nd.textContent.trim()) continue;
+    const r = document.createRange(); r.selectNodeContents(nd);
+    if (nd === R.startContainer) r.setStart(nd, R.startOffset);
+    if (nd === R.endContainer) r.setEnd(nd, R.endOffset);
+    for (const c of r.getClientRects()) {
+      if (c.width < .5 || c.height < .5) continue;
+      const cy = c.top + c.height / 2, pg = pages.find(p => cy >= p.b.top && cy <= p.b.bottom); if (!pg) continue;
+      out.push({p: pg.n, x: (c.left - pg.b.left) / pg.b.width, y: (c.top - pg.b.top) / pg.b.height, w: c.width / pg.b.width, h: c.height / pg.b.height});
+    }
+  }
+  if (!out.length) return null;
+  out.sort((a, b) => a.p - b.p || a.y - b.y || a.x - b.x);
+  const merged = [];   // 같은 줄의 조각은 하나로
+  for (const r of out) {
+    const L = merged.at(-1);
+    if (L && L.p === r.p && Math.abs((L.y + L.h / 2) - (r.y + r.h / 2)) < Math.min(L.h, r.h) * .5 && r.x <= L.x + L.w + .02) {
+      const x2 = Math.max(L.x + L.w, r.x + r.w), y1 = Math.min(L.y, r.y), y2 = Math.max(L.y + L.h, r.y + r.h);
+      L.x = Math.min(L.x, r.x); L.w = x2 - L.x; L.y = y1; L.h = y2 - y1;
+    } else merged.push({...r});
+  }
+  const rd = v => Math.round(v * 10000) / 10000;
+  return {pdf: merged.map(r => ({p: r.p, x: rd(r.x), y: rd(r.y), w: rd(r.w), h: rd(r.h)})), text};
+}
+// 화면 좌표 → 그 위치의 PDF 밑줄들
+function hitPdf(cx, cy) {
+  for (const d of $$("#doc .page")) {
+    const b = d.getBoundingClientRect(); if (cx < b.left || cx > b.right || cy < b.top || cy > b.bottom) continue;
+    const n = +d.dataset.page, x = (cx - b.left) / b.width, y = (cy - b.top) / b.height, pad = .002;
+    return meta.annots.filter(a => a.pdf?.some(r => r.p === n && x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad));
+  }
+  return [];
+}
+
+/* ════════════════ 6. 밑줄 만들기 · 선택 툴바 · 툴팁 · 편집 팝업 ════════════════ */
+const tb = $("#tb"), tip = $("#tip"), pop = $("#pop");
+let pending = null;   // 현재 본문 선택 {text, ranges | pdf}
+let popA = null;      // 팝업에서 편집 중인 밑줄
+
+const getPending = () => {
+  if (isPdfView()) return selPdf();
+  const ranges = selRanges();
+  return ranges && {ranges, text: ranges.map(r => blocks[r.b].t.slice(r.s, r.e)).join(" … ")};
+};
+function hideTb() { tb.classList.remove("on"); pending = null; }
+function showTb() {
+  const R = getSelection().getRangeAt(0).getBoundingClientRect();
+  tb.classList.add("on");
+  const w = tb.offsetWidth; let y = R.top - tb.offsetHeight - 10; if (y < 56) y = R.bottom + 10;
+  tb.style.left = Math.max(8, Math.min(innerWidth - w - 8, R.left + R.width / 2 - w / 2)) + "px"; tb.style.top = y + "px";
+}
+tb.addEventListener("mousedown", e => e.preventDefault());
+tb.addEventListener("click", e => { const b = e.target.closest("button"); if (b) runAct(b.dataset.act); });
+
+// act: "ul"(마지막 색) | "hl_r" | "hl_b" | "hl_g" | "note"
+function runAct(act) {
+  if (!pending) return;
+  if (act === "note") quoteToNotes(pending.text, "", locOf(pending));
+  else {
+    if (act !== "ul") lastColor = act.slice(3);
+    const a = {id: uid(), type: "ul", color: lastColor, ...pending, comment: "", t: Date.now()};
+    meta.annots.push(a); rerender(a); touch(); renderLists();
+    if (hasMemo(a)) setTimeout(() => openPop(a, true));   // 빨강(개념)·파랑(단어)은 바로 필기
+  }
+  getSelection().removeAllRanges(); hideTb();
+}
+function removeAnnot(a) {
+  meta.annots = meta.annots.filter(x => x !== a); rerender(a); touch(); renderLists();
+  if (popA === a) hidePop();
+}
+
+doc.addEventListener("mouseup", e => setTimeout(() => {
+  if (!meta) return;
+  const p = getPending();
+  if (p) { pending = p; hidePop(); showTb(); return; }
+  hideTb();
+  const mark = e.target.closest?.("mark.an");
+  const a = isPdfView() ? hitPdf(e.clientX, e.clientY).at(-1) : mark && annotsOf(mark).at(-1);
+  if (a) openPop(a);
+}));
+reader.addEventListener("scroll", () => { hideTb(); if (!pop.contains(document.activeElement)) hidePop(); hideTip(); saveScroll(); }, {passive: true});
+
+// 마우스를 올리면 필기·뜻 보여주기
+const hideTip = () => tip.style.display = "none";
+function showTip(list, r) {
+  list = list.filter(a => hasMemo(a) && a.comment?.trim());
+  if (!list.length) return hideTip();
+  tip.innerHTML = list.map(a => `<div class="tc"><div class="tq">“${esc(a.text.slice(0, 80))}”</div>${esc(a.comment)}</div>`).join("");
+  tip.style.display = "block"; place(tip, r);
+}
+let tipRaf = 0;
+doc.addEventListener("mousemove", e => {
+  if (!meta || tipRaf) return;
+  const {clientX: x, clientY: y, target} = e;
+  tipRaf = requestAnimationFrame(() => {
+    tipRaf = 0;
+    if (isPdfView()) return showTip(hitPdf(x, y), {left: x - 20, top: y - 6, bottom: y + 10});
+    const mark = target.closest?.("mark.an");
+    mark ? showTip(annotsOf(mark), mark.getBoundingClientRect()) : hideTip();
+  });
+});
+doc.addEventListener("mouseleave", hideTip);
+
+// 밑줄 편집 팝업: 색 바꾸기 · 필기 · 삭제 · 노트로 인용
+function hidePop() { pop.style.display = "none"; popA = null; }
+function openPop(a, focus) {
+  hideTip(); popA = a;
+  const memo = hasMemo(a);
+  pop.innerHTML = `<div class="q">“${esc(a.text.slice(0, 140))}”</div>
+    <div class="row">밑줄 색<span style="flex:1"></span>${Object.keys(COLORS).map(c =>
+      `<button class="cdot ${a.color === c ? "on" : ""}" data-c="${c}" style="background:${COLORS[c].line}"></button>`).join("")}</div>
+    ${memo ? `<textarea placeholder="${a.color === "b" ? "단어 뜻 입력 후 Enter로 저장" : "개념 필기 입력 후 Enter로 저장 · 줄바꿈 Shift+Enter"}">${esc(a.comment || "")}</textarea>` : ""}
+    <div class="acts"><button class="del" data-p="del">삭제</button><span><button data-p="note">❝ 노트로</button>${memo ? ' <button data-p="done">완료</button>' : ""}</span></div>`;
+  pop.style.display = "block";
+  const el = doc.querySelector(`mark.an[data-ids~="${a.id}"], .pa[data-aid="${a.id}"]`);
+  place(pop, el ? el.getBoundingClientRect() : {left: innerWidth / 2, top: innerHeight / 2, bottom: innerHeight / 2}, 8, 56);
+  const ta = pop.querySelector("textarea"); if (!ta) return;
+  if (focus) ta.focus();
+  ta.oninput = () => { a.comment = ta.value; touch(); renderLists(); };
+  ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); pop.querySelector('[data-p="done"]').click(); } };
+}
+pop.addEventListener("click", e => {
+  const a = popA, b = e.target.closest("button"); if (!a || !b) return;
+  if (b.dataset.c) { a.color = lastColor = b.dataset.c; rerender(a); touch(); renderLists(); return openPop(a); }
+  if (b.dataset.p === "del") return removeAnnot(a);
+  a.comment = (a.comment || "").trim(); hidePop(); touch(); renderLists();
+  if (b.dataset.p === "note") quoteToNotes(a.text, a.comment, locOf(a));
+  else if (a.comment) toast("저장했어요");
+});
+pop.addEventListener("keydown", e => { if (e.key === "Escape") hidePop(); });
+
+/* ════════════════ 7. 단축키 (사용자 지정) ════════════════ */
+const KEY_ACTS = [["ul", "밑줄 (마지막 색)"], ["hl_r", "밑줄 빨강 (개념)", "r"], ["hl_b", "밑줄 파랑 (단어)", "b"], ["hl_g", "밑줄 초록", "g"], ["note", "노트로 인용"]];
+const KEY_DEFAULT = {hl_r: "1", hl_b: "2", hl_g: "3", ul: "U", note: "N"};
+let KEYS = {...KEY_DEFAULT}, recAct = null;
+try { const s = JSON.parse(ls.get("pn:keys2")); for (const k in KEYS) if (s && k in s) KEYS[k] = s[k]; } catch {}
+
+// 한글 입력 상태에서도 같은 키로 동작하도록 e.code(키 위치) 기준
+function comboOf(e) {
+  if (["Control", "Shift", "Alt", "Meta", "Process"].includes(e.key)) return null;
+  let k = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^(Digit|Numpad)\d$/.test(e.code) ? e.code.slice(-1) : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  if (k === " ") k = "Space";
+  return [e.ctrlKey && "Ctrl", e.metaKey && "Cmd", e.altKey && "Alt", e.shiftKey && "Shift", k].filter(Boolean).join("+");
+}
+function updTbTitles() {
+  tb.querySelectorAll("[data-act]").forEach(b => { const a = b.dataset.act, l = KEY_ACTS.find(x => x[0] === a)[1]; b.title = KEYS[a] ? `${l} (${KEYS[a]})` : l; });
+}
+function renderKeys() {
+  $("#klist").innerHTML = KEY_ACTS.map(([a, l, c]) => `<div class="krow"><span class="kl">${c ? `<i style="background:${COLORS[c].line}"></i>` : ""}${l}</span>
+    <button class="kbtn ${recAct === a ? "rec" : KEYS[a] ? "" : "none"}" data-k="${a}">${recAct === a ? "키를 누르세요…" : KEYS[a] ? esc(KEYS[a]) : "없음"}</button></div>`).join("");
+}
+function saveKeys() { recAct = null; ls.set("pn:keys2", JSON.stringify(KEYS)); updTbTitles(); renderKeys(); }
+$("#klist").addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (b) { recAct = recAct === b.dataset.k ? null : b.dataset.k; renderKeys(); } });
+$("#kClose").addEventListener("click", () => overlay($("#kmodal"), false));
+$("#kReset").addEventListener("click", () => { KEYS = {...KEY_DEFAULT}; saveKeys(); });
+document.addEventListener("keydown", e => {   // 키 녹화 중
+  if (!recAct) return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) { recAct = null; return renderKeys(); }
+  if (e.key === "Backspace" || e.key === "Delete") { KEYS[recAct] = ""; return saveKeys(); }
+  const c = comboOf(e); if (!c) return;
+  if (c === "Ctrl+S" || c === "Cmd+S") return toast("저장 단축키와 겹쳐서 쓸 수 없어요");
+  for (const a in KEYS) if (KEYS[a] === c) KEYS[a] = "";   // 겹치면 이전 지정 해제
+  KEYS[recAct] = c; saveKeys();
+}, true);
+updTbTitles();
+
+/* ════════════════ 8. 주석 목록 탭 (밑줄 · 개념 · 단어) ════════════════ */
+const posKey = a => a.pdf ? [a.pdf[0].p, a.pdf[0].y, a.pdf[0].x] : [a.ranges[0]?.b || 0, a.ranges[0]?.s || 0, 0];
+const cmpAnnot = (x, y) => { const a = posKey(x), b = posKey(y); return a[0] - b[0] || a[1] - b[1] || a[2] - b[2]; };
+const byColor = (m, c) => m.annots.filter(a => a.color === c).sort(cmpAnnot);
+const LISTS = [   // [탭, 색, 본문 class, 비었을 때 안내]
+  ["annots", "g", "q", "아직 밑줄 그은 곳이 없어요.<br>본문을 드래그해서 초록 밑줄을 그어보세요."],
+  ["concept", "r", "q", `모르는 개념에 <b style="color:#e5484d">빨간 밑줄</b>을 그으면 여기에 모여요.<br>밑줄을 그으면 바로 필기를 적을 수 있어요.`],
+  ["vocab", "b", "w", `모르는 단어를 <b style="color:#2f6fde">파란 밑줄</b>로 표시하면 여기에 모여요.<br>표시한 단어를 클릭해 뜻을 적어두세요.`],
+];
+function renderLists() {
+  for (const [tab, c, cls, empty] of LISTS) {
+    const list = meta ? byColor(meta, c) : [];
+    $("#n-" + tab).textContent = list.length || "";
+    $("#l-" + tab).innerHTML = !meta ? "" : !list.length ? `<div class="empty-note">${empty}</div>` : list.map(a =>
+      `<div class="ai" data-id="${a.id}" style="border-left-color:${COLORS[c].line}"><button class="adel">삭제</button>
+        ${a.pdf ? `<div class="pn">p. ${a.pdf[0].p}</div>` : ""}<div class="${cls}">${esc(a.text)}</div>
+        ${hasMemo(a) && a.comment?.trim() ? `<div class="c">${esc(a.comment)}</div>` : ""}</div>`).join("");
+  }
+}
+$$(".alist").forEach(box => box.addEventListener("click", e => {
+  const it = e.target.closest(".ai"), a = it && meta.annots.find(x => x.id === it.dataset.id); if (!a) return;
+  if (e.target.closest(".adel")) { removeAnnot(a); toast("삭제했어요"); }
+  else jumpTo(locOf(a));
+}));
+
+/* ════════════════ 9. 원문 위치 링크 ════════════════
+ * PDF: p<쪽>-<x>-<y>-<w>-<h> (쪽 기준 0~1) / 텍스트: b<문단>-<시작>-<끝> */
+const locOf = x => x.pdf ? `p${x.pdf[0].p}-${x.pdf[0].x}-${x.pdf[0].y}-${x.pdf[0].w}-${x.pdf[0].h}`
+  : x.ranges?.[0] ? `b${x.ranges[0].b}-${x.ranges[0].s}-${x.ranges[0].e}` : "";
+async function jumpTo(loc) {
+  if (!meta || !loc) return;
+  let m = loc.match(/^p(\d+)-([\d.]+)-([\d.]+)-([\d.]+)-([\d.]+)$/);
+  if (m) {
+    if (!pdfDoc) return toast("원본 PDF가 없어 위치로 이동할 수 없어요");
+    if (viewMode !== "pdf") setView("pdf");
+    await docReady;
+    const [p, x, y, w, h] = m.slice(1).map(Number), pg = doc.querySelector(`.page[data-page="${p}"]`); if (!pg) return;
+    const to = {top: pg.offsetTop + y * pg.offsetHeight - reader.clientHeight / 3, behavior: "smooth"};
+    if (pg.offsetWidth > reader.clientWidth) to.left = Math.max(0, pg.offsetLeft + x * pg.offsetWidth - reader.clientWidth / 4);
+    reader.scrollTo(to);
+    let tries = 0;
+    const flash = () => {   // 쪽이 그려지면 해당 위치를 잠깐 표시
+      const al = pg.querySelector(".alayer"); if (!al) { if (tries++ < 30) setTimeout(flash, 100); return; }
+      const d = document.createElement("div"); d.className = "jflash";
+      d.style.cssText = `left:${(x - .004) * 100}%;top:${(y - .003) * 100}%;width:${(w + .008) * 100}%;height:${(h + .006) * 100}%`;
+      al.appendChild(d); setTimeout(() => d.remove(), 1700);
+    };
+    return setTimeout(flash, 450);
+  }
+  m = loc.match(/^b(\d+)-/);
+  if (m) {
+    if (isPdfView()) setView("text");
+    const el = blockEl(+m[1]); if (!el) return;
+    el.scrollIntoView({block: "center", behavior: "smooth"}); restartAnim(el, "jf");
+  }
+}
+
+/* ════════════════ 10. Markdown + 수식 ════════════════ */
+const mathCache = new Map(); let mjPromise = null;
+function ensureMathJax() {
+  if (!mjPromise) {
+    // 화면 낭독기용 MathML 사본은 끔 (함께 그려져 글자가 두 번 보였음)
+    window.MathJax = {startup: {typeset: false}, svg: {fontCache: "local"}, tex: {packages: {"[+]": ["ams"]}},
+      options: {enableAssistiveMml: false, menuOptions: {settings: {assistiveMml: false}}}};
+    mjPromise = loadScript(MATHJAX).then(() => MathJax.startup.promise)
+      .then(() => { try { document.head.appendChild(MathJax.svgStylesheet()); } catch {} })
+      .catch(e => { mjPromise = null; throw e; });
+  }
+  return mjPromise;
+}
+function mathSpan(tex, disp) {
+  const html = mathCache.get((disp ? "D" : "I") + tex);
+  return html ? `<span class="m">${html}</span>` : `<span class="m pending" data-d="${disp ? 1 : 0}" data-tex="${esc(tex)}">${esc(tex)}</span>`;
+}
+function typeset(root) {
+  const els = root.querySelectorAll(".m.pending"); if (!els.length) return;
+  ensureMathJax().then(() => els.forEach(el => {
+    const tex = el.dataset.tex, disp = el.dataset.d === "1";
+    try { const html = MathJax.tex2svg(tex, {display: disp}).outerHTML; mathCache.set((disp ? "D" : "I") + tex, html); el.innerHTML = html; el.classList.remove("pending"); }
+    catch { el.classList.add("err"); }
+  })).catch(() => els.forEach(el => el.classList.add("err")));
+}
+const imgName = src => src.replace(/^\.?\/?images\//, "");
+function imgTag(src, alt) {
+  if (/^(https?:|data:|blob:)/.test(src)) return `<img src="${esc(src)}" alt="${esc(alt)}">`;
+  const u = meta && Store.urls.get(meta.id + "/" + imgName(src));   // 저장소 이미지는 resolveImgs가 채움
+  return u ? `<img src="${u}" alt="${esc(alt)}">` : `<img data-local="${esc(src)}" alt="${esc(alt)}">`;
+}
+function inl(s) {
+  const tok = [], put = h => `\u0001${tok.push(h) - 1}\u0002`;
+  s = s.replace(/`([^`]+)`/g, (_, c) => put(`<code>${esc(c)}</code>`))
+       .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => put(imgTag(src, alt)))
+       .replace(/\$([^$\n]+?)\$/g, (_, t) => put(mathSpan(t.trim(), false)));
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*/g, "$1<i>$2</i>")
+    .replace(/~~(.+?)~~/g, "<s>$1</s>")
+    .replace(/==(.+?)==/g, '<mark class="nh">$1</mark>')
+    .replace(/\[([^\]]+)\]\(#pn-([^)\s]+)\)/g, '<a class="jump" data-loc="$2" title="원문 위치로 이동">↗ $1</a>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\u0001(\d+)\u0002/g, (_, i) => tok[+i]);
+}
+const LI = /^(\s*)([-*]|\d+\.) (\[( |x|X)\] )?(.*)$/;
+function renderMd(src) {
+  const t = src.trim(); if (!t) return "";
+  if (t.startsWith("```")) return `<pre><code>${esc(t.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, ""))}</code></pre>`;
+  if (/^\$\$[\s\S]+\$\$$/.test(t)) return `<div class="mdisp">${mathSpan(t.slice(2, -2).trim(), true)}</div>`;
+  if (/^(---|\*\*\*)$/.test(t)) return "<hr>";
+  const hm = t.match(/^(#{1,3}) ([\s\S]*)$/); if (hm) return `<h${hm[1].length}>${inl(hm[2])}</h${hm[1].length}>`;
+  if (t.startsWith(">")) return `<blockquote>${t.split("\n").map(l => inl(l.replace(/^> ?/, ""))).join("<br>")}</blockquote>`;
+  const lines = src.replace(/\n+$/, "").split("\n");
+  if (!lines.some(l => LI.test(l))) return `<p>${lines.map(inl).join("<br>")}</p>`;
+  const items = [];   // 목록: 다음 항목 전까지의 줄은 앞 항목에 이어붙임
+  lines.forEach((l, li) => {
+    const m = l.match(LI);
+    if (m) items.push({m, li, cont: []}); else if (items.length) items.at(-1).cont.push(l); else items.push({plain: l});
+  });
+  return items.map(({m, li, cont, plain}) => {
+    if (plain !== undefined) return `<p>${inl(plain)}</p>`;
+    const ind = Math.floor(m[1].replace(/\t/g, "  ").length / 2) * 20, done = m[4]?.toLowerCase() === "x";
+    const mk = m[3] !== undefined ? `<input type="checkbox" data-line="${li}" ${done ? "checked" : ""}>` : /\d/.test(m[2]) ? m[2] : ind ? "◦" : "•";
+    return `<div class="li${done ? " done" : ""}" style="padding-left:${ind}px"><span class="mk">${mk}</span><span class="tx">${[m[5], ...cont].map(inl).join("<br>")}</span></div>`;
+  }).join("");
+}
+
+/* ════════════════ 11. 노트 편집기 (Notion식 블록) ════════════════
+ * meta.notes = 블록 문자열 배열. 블록 = 들여쓰기(2칸×단계) + 접두어(# , > , - , 1. , - [ ] …) + 내용
+ * 한 번에 한 블록(ed)만 textarea로 편집하고 나머지는 Markdown으로 그림 */
+const notesEl = $("#notes");
+let ed = -1, edInd = "", edPre = "", edSuf = "", nGen = 0;
+let selSet = new Set(), selAnchor = -1;   // 블록 선택 (드래그 / Shift+클릭 / Esc)
+const PRE = /^( *)(#{1,3} |> |(?:[-*]|\d+\.) (?:\[[ xX]\] )?)?/;
+const SUF = /\s*\[[^\]]*\]\(#pn-[^)\s]+\)\s*$/;   // 인용 끝의 원문 위치 링크 (편집 중엔 숨김)
+function splitBlock(src) { const m = src.match(PRE); return {ind: m[1], pre: m[2] || "", body: src.slice(m[0].length)}; }
+const isListPre = pre => /^(?:[-*]|\d+\.) /.test(pre);
+const isImgBlock = src => /^(!\[[^\]]*\]\([^)\s]+\)\s*)+$/.test(splitBlock(src || "").body.trim());   // 이미지만 있는 블록은 편집 대신 선택
+function kindOf(pre) {
+  if (/^#{1,3} $/.test(pre)) return "h" + (pre.length - 1);
+  if (pre === "> ") return "q";
+  if (/\[[ xX]\] $/.test(pre)) return "todo";
+  if (/^\d/.test(pre)) return "num";
+  return pre ? "li" : "p";
+}
+
+function renderNotes() {
+  if (!meta) { notesEl.innerHTML = `<div class="empty-note">논문을 열면 여기에 노트를 쓸 수 있어요.</div>`; return; }
+  if (!meta.notes.length) meta.notes = [""];
+  nGen++;
+  const frag = document.createDocumentFragment();
+  meta.notes.forEach((src, i) => {
+    const {ind, pre, body} = splitBlock(src), lvl = ind.length >> 1, d = document.createElement("div");
+    const hd = `<span class="hd" draggable="true" title="끌어서 이동 · Ctrl+Shift+↑/↓" style="left:${lvl * 24 - 20}px">⋮⋮</span>`;
+    d.dataset.i = i; d.style.paddingLeft = lvl * 24 + "px";
+    if (i === ed && !isImgBlock(src)) {
+      const sm = body.match(SUF), k = body.trimStart().startsWith("```") ? "code" : kindOf(pre);
+      edInd = ind; edPre = pre; edSuf = sm ? sm[0] : "";
+      const mk = k === "todo" ? `<input type="checkbox" ${/\[[xX]\]/.test(pre) ? "checked" : ""}>` : k === "num" ? pre.trim() : k === "li" ? (lvl ? "◦" : "•") : "";
+      d.className = "nb e k-" + k;
+      d.innerHTML = `${hd}<div class="erow">${mk && `<span class="emk">${mk}</span>`}<textarea rows="1" spellcheck="false"></textarea></div><div class="prev"></div>`;
+      const ta = d.querySelector("textarea"); ta.value = sm ? body.slice(0, sm.index) : body;
+      wireTa(ta, d.querySelector(".prev"), i);
+    } else {
+      const h = renderMd(pre + body);
+      d.className = "nb r"; d.innerHTML = hd + h;
+      if (!h && meta.notes.length === 1) { d.classList.add("ph"); d.dataset.ph = "노트를 입력하세요 — # 제목, - 목록, > 인용, $수식$"; }
+    }
+    d.classList.toggle("sel", selSet.has(i));
+    frag.appendChild(d);
+  });
+  const pane = $("#p-notes"), st = pane.scrollTop;   // 다시 그려도 스크롤 위치 유지
+  notesEl.replaceChildren(frag); pane.scrollTop = st;
+  typeset(notesEl); resolveImgs(notesEl);
+}
+function resolveImgs(root) {
+  root.querySelectorAll("img[data-local]").forEach(img => {
+    const name = imgName(img.dataset.local); img.removeAttribute("data-local");
+    Store.imageURL(meta, name).then(u => img.src = u, () => { img.alt = "⚠ 이미지를 찾을 수 없어요: " + name; img.classList.add("miss"); });
+  });
+}
+const IMG_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg"};
+async function insertImages(files, at) {
+  if (!meta) return;
+  const refs = [];
+  for (const f of files) {
+    const name = `img-${uid()}.${IMG_EXT[f.type] || "png"}`;
+    try { await Store.putFile(meta, "images/" + name, f); refs.push(`![](images/${name})`); }
+    catch { return toast("이미지를 저장하지 못했어요"); }
+  }
+  if (at < 0) at = meta.notes.length - 1;
+  const pos = meta.notes[at].trim() ? at + 1 : at;   // 빈 블록이면 그 자리를 대체
+  meta.notes.splice(pos, pos === at ? 1 : 0, ...refs, "");
+  touch(); focusBlock(pos + refs.length, 0);
+}
+
+// 편집 / 선택 전환
+function focusBlock(i, pos) {
+  if (isImgBlock(meta.notes[i])) return selectOnly(i);
+  selSet.clear(); selAnchor = -1; ed = i; renderNotes();
+  const ta = notesEl.querySelector("textarea"); if (!ta) return;
+  ta.focus({preventScroll: true});
+  const pr = $("#p-notes").getBoundingClientRect(), r = ta.getBoundingClientRect();
+  if (r.top < pr.top || r.bottom > pr.bottom) ta.scrollIntoView({block: "nearest"});
+  const p = pos == null ? ta.value.length : Math.min(pos, ta.value.length); ta.setSelectionRange(p, p);
+}
+function selectOnly(i) { ed = -1; selSet = new Set([i]); selAnchor = i; renderNotes(); }
+function applySel() { notesEl.querySelectorAll(".nb").forEach(d => d.classList.toggle("sel", selSet.has(+d.dataset.i))); }
+function selectBlocks(a, b) {
+  selAnchor = a; selSet = new Set(); for (let k = Math.min(a, b); k <= Math.max(a, b); k++) selSet.add(k);
+  if (ed >= 0) { ed = -1; renderNotes(); } else applySel();
+  if (notesEl.contains(document.activeElement)) document.activeElement.blur();
+}
+function clearSel() { if (!selSet.size) return; selSet.clear(); selAnchor = -1; applySel(); }
+function selectByY(y0, y1) {
+  const lo = Math.min(y0, y1), hi = Math.max(y0, y1); selSet = new Set();
+  notesEl.querySelectorAll(".nb").forEach(d => { const r = d.getBoundingClientRect(); if (r.bottom > lo && r.top < hi) selSet.add(+d.dataset.i); });
+  selAnchor = selSet.size ? Math.min(...selSet) : -1; applySel();
+}
+function deleteBlocks(idx) {
+  const hadImg = idx.some(i => isImgBlock(meta.notes[i]));
+  [...idx].sort((a, b) => b - a).forEach(i => meta.notes.splice(i, 1));
+  if (!meta.notes.length) meta.notes = [""];
+  selSet.clear(); selAnchor = -1; ed = -1; touch(); renderNotes();
+  if (hadImg && Store.dir) toast("노트에서만 지웠어요 — 이미지 파일은 images 폴더에 그대로 있어요", 3500);
+}
+// notes[a0 .. a0+len) 를 떼어서 (뗀 뒤 기준) to 위치에 끼움
+function moveGroup(a0, len, to) { meta.notes.splice(to, 0, ...meta.notes.splice(a0, len)); touch(); return to; }
+
+function autosize(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
+function updPrev(ta, pv) {   // 수식·이미지가 있으면 편집 중에도 미리보기
+  const on = /\$|!\[/.test(ta.value); pv.style.display = on ? "block" : "none";
+  if (on) { pv.innerHTML = renderMd(ta.value); typeset(pv); resolveImgs(pv); }
+}
+function setVal(ta, v, caret) { ta.value = v; meta.notes[ed] = edInd + edPre + v + edSuf; ta.setSelectionRange(caret, caret); autosize(ta); touch(); }
+
+function wireTa(ta, pv, i) {
+  requestAnimationFrame(() => { autosize(ta); updPrev(ta, pv); });
+  const save = (v = ta.value) => { meta.notes[i] = edInd + edPre + v + edSuf; touch(); };
+  const reopen = (pos, v) => { save(v); focusBlock(i, pos); };   // 접두어·들여쓰기가 바뀌면 다시 그림
+
+  ta.addEventListener("input", e => {
+    // 블록 맨 앞에서 "# " "- " "1. " "> " "[] " 입력 → 바로 그 블록 종류로 변환
+    const c = ta.selectionStart, v = ta.value;
+    if (!e.isComposing && c === ta.selectionEnd) {
+      const m = (!edPre && v.match(/^(#{1,3}|>|[-*]|\d+\.|\[ ?\]) /)) || (/^[-*] $/.test(edPre) && v.match(/^(\[ ?\]) /));
+      if (m && c === m[0].length) { edPre = m[1][0] === "[" ? "- [ ] " : m[1] + " "; return reopen(0, v.slice(c)); }
+    }
+    autosize(ta); updPrev(ta, pv); save();
+  });
+  const gen = nGen;   // 같은 블록을 다시 그린 경우엔 편집을 끝내지 않음
+  ta.addEventListener("blur", () => setTimeout(() => { if (gen === nGen && document.activeElement !== ta && ed === i) { ed = -1; renderNotes(); } }));
+  ta.parentElement.querySelector(".emk input")?.addEventListener("mousedown", e => {
+    e.preventDefault(); edPre = edPre.replace(/\[( |x|X)\]/, x => x === "[ ]" ? "[x]" : "[ ]"); reopen(ta.selectionStart);
+  });
+
+  ta.addEventListener("paste", e => {
+    const cd = e.clipboardData; if (!cd) return;
+    const imgs = [...cd.files].filter(f => f.type.startsWith("image/"));
+    if (imgs.length) { e.preventDefault(); return insertImages(imgs, i); }
+    const txt = cd.getData("text/plain");   // 빈 줄로 나뉜 여러 문단 → 블록 여러 개
+    if (!/\n\s*\n/.test(txt) || ta.value.startsWith("```")) return;
+    e.preventDefault();
+    const parts = txt.replace(/\r/g, "").split(/\n\s*\n/), v = ta.value;
+    parts[0] = edInd + edPre + v.slice(0, ta.selectionStart) + parts[0];
+    const caret = splitBlock(parts.at(-1)).body.length;
+    parts[parts.length - 1] += v.slice(ta.selectionEnd) + edSuf;
+    meta.notes.splice(i, 1, ...parts); touch(); focusBlock(i + parts.length - 1, caret);
+  });
+
+  ta.addEventListener("keydown", e => {
+    if (e.isComposing || e.keyCode === 229) return;
+    const v = ta.value, s = ta.selectionStart, en = ta.selectionEnd, k = e.key, mod = e.ctrlKey || e.metaKey, sel = v.slice(s, en);
+    const inCode = v.trimStart().startsWith("```") && !/\n```\s*$/.test(v);
+    if (mod && e.shiftKey && (k === "ArrowUp" || k === "ArrowDown")) {   // 블록 위/아래로 이동
+      e.preventDefault(); const to = i + (k === "ArrowUp" ? -1 : 1);
+      if (to >= 0 && to < meta.notes.length) focusBlock(moveGroup(i, 1, to), s);
+      return;
+    }
+    if (mod && e.shiftKey && k.toLowerCase() === "e") {   // 인라인 수식 $…$ 감싸기/풀기
+      e.preventDefault();
+      if (!sel) setVal(ta, v.slice(0, s) + "$$" + v.slice(en), s + 1);
+      else if (/^\$[\s\S]+\$$/.test(sel)) setVal(ta, v.slice(0, s) + sel.slice(1, -1) + v.slice(en), s + sel.length - 2);
+      else setVal(ta, v.slice(0, s) + "$" + sel + "$" + v.slice(en), s + sel.length + 2);
+      return updPrev(ta, pv);
+    }
+    if (mod && !e.shiftKey && (k === "b" || k === "i")) {   // 굵게 / 기울임
+      e.preventDefault(); const w = k === "b" ? "**" : "*";
+      return setVal(ta, v.slice(0, s) + w + sel + w + v.slice(en), sel ? en + w.length * 2 : s + w.length);
+    }
+    if (k === "Escape") { e.preventDefault(); return selectOnly(i); }
+    if (k === "Tab") {   // 들여쓰기: 바로 위 블록보다 한 단계 깊게까지만
+      e.preventDefault();
+      if (inCode) { if (!e.shiftKey) setVal(ta, v.slice(0, s) + "  " + v.slice(en), s + 2); return; }
+      const lvl = edInd.length >> 1, prevLvl = i > 0 ? splitBlock(meta.notes[i - 1]).ind.length >> 1 : -1;
+      if (e.shiftKey ? !lvl : lvl > prevLvl) return;
+      edInd = e.shiftKey ? edInd.slice(2) : edInd + "  "; return reopen(s);
+    }
+    if (k === "Enter" && !e.shiftKey) {
+      const tv = v.trim();
+      if (inCode || (tv.startsWith("$$") && !(tv.length > 3 && tv.endsWith("$$")))) return;   // 코드·블록 수식 안: 줄바꿈
+      e.preventDefault();
+      if (isListPre(edPre) && !tv) { if (edInd) edInd = edInd.slice(2); else edPre = ""; return reopen(0); }   // 빈 목록 항목 → 내어쓰기
+      const n = edPre.match(/^(\d+)\./), pre = !isListPre(edPre) ? "" : n ? (+n[1] + 1) + ". " : edPre.replace(/\[[xX]\]/, "[ ]");
+      meta.notes[i] = edInd + edPre + v.slice(0, s) + edSuf;
+      meta.notes.splice(i + 1, 0, edInd + pre + v.slice(en)); touch();
+      return focusBlock(i + 1, 0);
+    }
+    if (k === "Backspace" && s === 0 && en === 0) {
+      if (edPre) { e.preventDefault(); edPre = ""; return reopen(0); }                 // 접두어 제거 → 일반 블록
+      if (edInd) { e.preventDefault(); edInd = edInd.slice(2); return reopen(0); }     // 내어쓰기
+      if (i === 0) return;
+      e.preventDefault();
+      if (isImgBlock(meta.notes[i - 1])) { if (!v) { meta.notes.splice(i, 1); touch(); } return selectOnly(i - 1); }
+      const prev = meta.notes[i - 1], ps = (prev.match(SUF) || [""])[0], caret = splitBlock(prev).body.length - ps.length;
+      meta.notes[i - 1] = prev.slice(0, prev.length - ps.length) + v + (ps || edSuf);   // 앞 블록과 합치기
+      meta.notes.splice(i, 1); touch();
+      return focusBlock(i - 1, caret);
+    }
+    if (k === "ArrowUp" && i > 0 && !v.slice(0, s).includes("\n")) { e.preventDefault(); focusBlock(i - 1); }
+    if (k === "ArrowDown" && i < meta.notes.length - 1 && !v.slice(en).includes("\n")) { e.preventDefault(); focusBlock(i + 1, 0); }
+  });
+}
+
+// 선택된 블록 키보드: Del 삭제 · Esc 해제 · Enter 편집 · ↑↓ 이동(Shift 범위) · Ctrl+Shift+↑↓ 묶어서 이동 · Ctrl+C 복사
+function onSelKey(e) {
+  const idx = [...selSet].sort((a, b) => a - b), N = meta.notes.length, a0 = idx[0], a1 = idx.at(-1), k = e.key, mod = e.ctrlKey || e.metaKey;
+  if (k === "Delete" || k === "Backspace") { e.preventDefault(); return deleteBlocks(idx); }
+  if (k === "Escape") return clearSel();
+  if (mod && k.toLowerCase() === "c") {
+    e.preventDefault(); navigator.clipboard.writeText(idx.map(i => meta.notes[i]).join("\n\n")).then(() => toast("블록을 복사했어요"), () => {}); return;
+  }
+  if (k === "Enter") { if (idx.length === 1 && !isImgBlock(meta.notes[a0])) { e.preventDefault(); focusBlock(a0); } return; }
+  if (k !== "ArrowUp" && k !== "ArrowDown") return;
+  e.preventDefault(); const up = k === "ArrowUp";
+  if (mod && e.shiftKey) {
+    if (up ? a0 === 0 : a1 === N - 1) return;
+    const ins = moveGroup(a0, idx.length, a0 + (up ? -1 : 1));
+    selSet = new Set(idx.map((_, j) => ins + j)); selAnchor = ins; renderNotes();
+    notesEl.querySelector(`.nb[data-i="${up ? ins : ins + idx.length - 1}"]`)?.scrollIntoView({block: "nearest"});
+    return;
+  }
+  if (e.shiftKey) { const t = (selAnchor === a0 ? a1 : a0) + (up ? -1 : 1); if (t >= 0 && t < N) selectBlocks(selAnchor < 0 ? a0 : selAnchor, t); return; }
+  const t = up ? a0 - 1 : a1 + 1; if (t < 0 || t >= N) return;
+  isImgBlock(meta.notes[t]) ? selectBlocks(t, t) : focusBlock(t, up ? null : 0);
+}
+
+// 블록 끌어서 이동 (⋮⋮ 손잡이). 여러 블록이 선택된 상태면 함께 이동
+let dragFrom = null;
+const clearDropMarks = () => notesEl.querySelectorAll(".drop-b,.drop-a").forEach(x => x.classList.remove("drop-b", "drop-a"));
+function dropSpot(y) {   // 마우스 높이 기준 놓을 자리
+  const bs = [...notesEl.querySelectorAll(".nb")];
+  for (const b of bs) { const r = b.getBoundingClientRect(); if (y < r.top + r.height / 2) return {el: b, at: +b.dataset.i, before: true}; }
+  return {el: bs.at(-1), at: +bs.at(-1).dataset.i + 1, before: false};
+}
+notesEl.addEventListener("dragstart", e => {
+  const blk = e.target.closest?.(".hd")?.closest(".nb"); if (!blk) return;
+  dragFrom = +blk.dataset.i;
+  e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/x-pn-block", String(dragFrom));
+  try { e.dataTransfer.setDragImage(blk, 10, 10); } catch {}
+  blk.classList.add("dragging");
+});
+notesEl.addEventListener("dragend", () => { dragFrom = null; clearDropMarks(); notesEl.querySelectorAll(".dragging").forEach(x => x.classList.remove("dragging")); });
+notesEl.addEventListener("dragover", e => {
+  if (dragFrom === null) { if (meta && hasFiles(e)) e.preventDefault(); return; }
+  e.preventDefault(); e.dataTransfer.dropEffect = "move"; clearDropMarks();
+  const pane = $("#p-notes"), pr = pane.getBoundingClientRect(), edge = 60;   // 위·아래 가장자리에서 자동 스크롤
+  if (e.clientY < pr.top + edge) pane.scrollTop -= Math.ceil((pr.top + edge - e.clientY) / 3);
+  else if (e.clientY > pr.bottom - edge) pane.scrollTop += Math.ceil((e.clientY - pr.bottom + edge) / 3);
+  const sp = dropSpot(e.clientY); sp.el.classList.add(sp.before ? "drop-b" : "drop-a");
+});
+notesEl.addEventListener("drop", e => {
+  if (dragFrom !== null) {
+    e.preventDefault();
+    const from = dragFrom; dragFrom = null; clearDropMarks();
+    const grp = selSet.size > 1 && selSet.has(from) ? [...selSet].sort((a, b) => a - b) : [from];
+    const a0 = grp[0], a1 = grp.at(-1); let ins = dropSpot(e.clientY).at;
+    if (ins >= a0 && ins <= a1 + 1) return;
+    if (ins > a1) ins -= grp.length;
+    moveGroup(a0, grp.length, ins);
+    selSet = new Set(grp.length > 1 ? grp.map((_, k) => ins + k) : []); selAnchor = selSet.size ? ins : -1;
+    ed = -1; return renderNotes();
+  }
+  const imgs = [...e.dataTransfer.files].filter(f => f.type.startsWith("image/")); if (!meta || !imgs.length) return;
+  e.preventDefault(); const blk = e.target.closest(".nb");
+  insertImages(imgs, blk ? +blk.dataset.i : ed);
+});
+
+// 마우스: 클릭 → 편집, 세로로 끌기 → 블록 범위 선택, 체크박스 토글, 원문 링크
+notesEl.addEventListener("click", e => { const j = e.target.closest("a.jump"); if (j) { e.preventDefault(); jumpTo(j.dataset.loc); } });
+let mdrag = null;
+notesEl.addEventListener("mousedown", e => {
+  if (!meta || e.button !== 0 || e.target.closest(".hd")) return;
+  const cb = e.target.closest('input[type="checkbox"]'), blk = e.target.closest(".nb");
+  if (cb && blk?.classList.contains("r")) {
+    e.preventDefault(); const i = +blk.dataset.i, lines = meta.notes[i].split("\n");
+    lines[+cb.dataset.line] = lines[+cb.dataset.line].replace(/\[( |x|X)\]/, m => m === "[ ]" ? "[x]" : "[ ]");
+    meta.notes[i] = lines.join("\n"); touch(); return renderNotes();
+  }
+  if (e.target.closest("a")) return;
+  if (blk?.classList.contains("e")) { clearSel(); mdrag = {y0: e.clientY, i0: +blk.dataset.i, moved: false, ta: true}; return; }   // 편집 중: 블록 밖으로 끌면 블록 선택
+  e.preventDefault();
+  if (e.shiftKey && blk && selAnchor >= 0) return selectBlocks(selAnchor, +blk.dataset.i);
+  mdrag = {y0: e.clientY, i0: blk ? +blk.dataset.i : null, moved: false, ta: false};
+});
+addEventListener("mousemove", e => {
+  if (!mdrag || !(e.buttons & 1)) return;
+  if (!mdrag.moved) {
+    if (mdrag.ta) {
+      const r = notesEl.querySelector(`.nb[data-i="${mdrag.i0}"]`)?.getBoundingClientRect();
+      if (r && e.clientY >= r.top - 2 && e.clientY <= r.bottom + 2) return;
+      getSelection().removeAllRanges();
+    } else if (Math.abs(e.clientY - mdrag.y0) < 6) return;
+    mdrag.moved = true; notesEl.classList.add("selecting");
+    if (ed >= 0) { ed = -1; renderNotes(); }
+    if (notesEl.contains(document.activeElement)) document.activeElement.blur();
+  }
+  selectByY(mdrag.y0, e.clientY);
+});
+addEventListener("mouseup", () => {
+  if (!mdrag) return; const d = mdrag; mdrag = null; notesEl.classList.remove("selecting");
+  if (d.moved || d.ta) return;
+  if (d.i0 !== null) return isImgBlock(meta.notes[d.i0]) ? selectBlocks(d.i0, d.i0) : focusBlock(d.i0);
+  clearSel();   // 빈 곳 클릭 → 마지막 빈 블록에서 이어 쓰기
+  const n = meta.notes; if (n.at(-1).trim() || isImgBlock(n.at(-1))) { n.push(""); touch(); }
+  focusBlock(n.length - 1);
+});
+
+function quoteToNotes(text, comment, loc) {
+  if (!meta) return;
+  const lbl = loc[0] === "p" ? "p. " + loc.slice(1).split("-")[0] : "본문";
+  const add = ["> " + text.replace(/\s*\n\s*/g, " ") + (loc ? ` [${lbl}](#pn-${loc})` : "")];
+  if (comment?.trim()) add.push(comment.trim());
+  if (meta.notes.length === 1 && !meta.notes[0].trim()) meta.notes = add; else meta.notes.push(...add);
+  meta.notes.push(""); touch(); switchTab("notes"); focusBlock(meta.notes.length - 1);
+}
+
+/* ════════════════ 12. 전역 키 · 마우스, 탭, 크기 조절 ════════════════ */
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); clearTimeout(saveTimer); flush(); return toast("저장했어요"); }
+  if (recAct || e.target.closest?.("input,textarea")) return;
+  if (pending) {   // 본문 선택 중: 사용자 지정 단축키
+    if (e.key === "Escape") return hideTb();
+    const c = comboOf(e), act = c && Object.keys(KEYS).find(a => KEYS[a] === c);
+    if (act) { e.preventDefault(); runAct(act); }
+  } else if (meta && selSet.size) onSelKey(e);
+});
+document.addEventListener("mousedown", e => {
+  if (popA && !pop.contains(e.target) && !e.target.closest("mark.an")) hidePop();
+  if (!e.target.closest(".menu-wrap")) $("#menu").classList.remove("on");
+  if (selSet.size && !notesEl.contains(e.target)) clearSel();
+});
+
+function switchTab(t) {
+  $$(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $$(".pane").forEach(p => p.classList.toggle("on", p.id === "p-" + t));
+}
+$$(".tab").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+
+{ // 본문 | 사이드 경계 끌어서 너비 조절
+  const root = document.documentElement.style, rz = $("#rz"); let drag = false;
+  const w0 = +ls.get("pn:side"); if (w0 > 260) root.setProperty("--side", w0 + "px");
+  rz.addEventListener("mousedown", e => { drag = true; rz.classList.add("drag"); e.preventDefault(); });
+  addEventListener("mousemove", e => { if (drag) root.setProperty("--side", Math.max(280, Math.min(innerWidth - 360, innerWidth - e.clientX)) + "px"); });
+  addEventListener("mouseup", () => { if (!drag) return; drag = false; rz.classList.remove("drag"); ls.set("pn:side", parseInt(root.getPropertyValue("--side"))); });
+}
+let scrollT = null;
+function saveScroll() { if (!meta) return; clearTimeout(scrollT); scrollT = setTimeout(() => ls.set("pn:sc:" + meta.id, reader.scrollTop), 300); }
+
+// 서랍·대화상자: 하나라도 열려 있으면 배경 어둡게
+function overlay(el, on) {
+  el.classList.toggle("on", on);
+  if (!on && el.id === "kmodal") recAct = null;
+  $("#scrim").classList.toggle("on", $$("#drawer.on, .dlg.on").length > 0);
+}
+$("#scrim").addEventListener("click", () => $$("#drawer, .dlg").forEach(el => overlay(el, false)));
+
+/* ════════════════ 13. 논문 목록 · 열기 · 만들기 ════════════════ */
+function openDrawer(on) { overlay($("#drawer"), on); if (on) renderLib(); }
+$("#bLib").addEventListener("click", () => openDrawer(true));
+function renderLib() {
+  $("#lib").innerHTML = !papers.length ? `<div class="empty-note">아직 논문이 없어요.</div>`
+    : [...papers].sort((a, b) => b.updated - a.updated).map(p => `<div class="lp ${p.id === meta?.id ? "cur" : ""}" data-id="${p.id}">
+        <div class="t"><b>${esc(p.title || "제목 없음")}</b><small>${new Date(p.updated).toLocaleDateString("ko-KR")} · 주석 ${(p.annots || []).length}</small></div>
+        <button class="x" title="삭제">삭제</button></div>`).join("");
+}
+$("#lib").addEventListener("click", async e => {
+  const row = e.target.closest(".lp"); if (!row) return;
+  const p = papers.find(x => x.id === row.dataset.id), x = e.target.closest(".x");
+  if (!x) { openDrawer(false); return openPaper(p); }
+  if (!x.classList.contains("armed")) {   // 두 번 눌러야 삭제
+    x.classList.add("armed"); x.textContent = "정말 삭제";
+    return setTimeout(() => { x.classList.remove("armed"); x.textContent = "삭제"; }, 2500);
+  }
+  let soft; try { soft = await Store.remove(p); } catch { return toast("삭제하지 못했어요"); }
+  if (soft) toast(`목록에서 지웠어요. 파일은 ${DATA_DIR}/${p.dir} 폴더에 남아 있으니 필요 없으면 직접 삭제하세요`, 6000);
+  papers = papers.filter(q => q !== p);
+  if (meta?.id === p.id) { meta = null; blocks = []; pdfDoc = null; ls.del("pn:last"); showPaper(); }
+  renderLib();
+});
+
+function showPaper() {
+  const ti = $("#title"); ti.disabled = !meta; ti.value = meta ? meta.title : "";
+  renderDoc(); renderNotes(); renderLists();
+}
+$("#title").addEventListener("input", e => { if (meta) { meta.title = e.target.value; touch(); } });
+
+async function openPaper(p) {
+  await flush(); setStatus("불러오는 중…");
+  try { blocks = await Store.loadText(p); } catch { return setStatus("불러오기 실패", true); }
+  await loadPdfFor(p);
+  meta = p; meta.annots ||= []; if (!meta.notes?.length) meta.notes = [""];
+  // 이전 버전 데이터: 형광펜·댓글 → 밑줄, 없는 색 → 빨강
+  if (meta.annots.some(a => a.type !== "ul" || !COLORS[a.color])) {
+    meta.annots = meta.annots.filter(a => !a.draft);
+    meta.annots.forEach(a => { a.type = "ul"; if (!COLORS[a.color]) a.color = "r"; }); touch();
+  }
+  viewMode = pdfDoc ? ls.get("pn:view:" + p.id) || "pdf" : "text";
+  ls.set("pn:last", p.id); ed = -1; selSet.clear(); showPaper();
+  await docReady;
+  const sc = +ls.get("pn:sc:" + p.id); requestAnimationFrame(() => reader.scrollTop = sc || 0);
+  idleStatus();
+}
+async function createPaper(title, newBlocks, extra = {}, file = null, pdf = null) {
+  const m = {id: uid(), title: title || "제목 없음", created: Date.now(), updated: Date.now(), annots: [], notes: [""], ...extra};
+  if (Store.dir) m.dir = await Store.uniqueDir(safeTitle(m.title));
+  setStatus("저장 중…");
+  await Store.saveText(m, newBlocks); await Store.saveMeta(m);
+  if (file) await Store.putFile(m, "original.pdf", file);
+  papers.push(m); meta = m; blocks = newBlocks; pdfDoc = pdf; viewMode = pdf ? "pdf" : "text";
+  ed = -1; selSet.clear(); ls.set("pn:last", m.id);
+  showPaper(); reader.scrollTop = 0; idleStatus();
+}
+async function reloadLibrary() {
+  try { papers = await Store.list(); } catch { papers = []; setStatus("목록을 불러오지 못했어요", true); }
+  meta = null; blocks = [];
+  const last = papers.find(p => p.id === ls.get("pn:last")) || [...papers].sort((a, b) => b.updated - a.updated)[0];
+  if (last) await openPaper(last); else { showPaper(); idleStatus(); }
+}
+
+/* ════════════════ 14. 새 논문: 대화상자 · 페이지에 PDF 끌어놓기 ════════════════ */
+let pdfFile = null, importing = false, dragDepth = 0;
+const isPdfFile = f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
+const EMPTY_PDF = "추출된 텍스트가 없어요 (스캔본 PDF일 수 있어요)";
+const drop = $("#drop");
+
+function openModal() {
+  pdfFile = null; $("#mText").value = ""; $("#mTitle").value = ""; $("#mMsg").textContent = "";
+  drop.innerHTML = "<b>PDF를 끌어놓거나 클릭해서 선택</b><br><small>텍스트를 추출해 읽기 화면으로 만듭니다</small>";
+  overlay($("#modal"), true);
+}
+$("#bNew").addEventListener("click", openModal);
+$("#mCancel").addEventListener("click", () => overlay($("#modal"), false));
+drop.addEventListener("click", () => $("#fPdf").click());
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) pickPdf(e.dataTransfer.files[0]); });
+$("#fPdf").addEventListener("change", e => { if (e.target.files[0]) pickPdf(e.target.files[0]); e.target.value = ""; });
+function pickPdf(f) {
+  if (!isPdfFile(f)) { $("#mMsg").textContent = "PDF 파일만 올릴 수 있어요"; return; }
+  pdfFile = f; drop.innerHTML = `<b>📄 ${esc(f.name)}</b><br><small>${(f.size / 1048576).toFixed(1)} MB · 만들기를 누르면 텍스트를 추출합니다</small>`;
+  if (!$("#mTitle").value) $("#mTitle").value = f.name.replace(/\.pdf$/i, "");
+}
+$("#mOk").addEventListener("click", async () => {
+  const btn = $("#mOk"), msg = $("#mMsg"), txt = $("#mText").value.trim(); if (btn.disabled) return;
+  if (!pdfFile && !txt) { msg.textContent = "PDF를 선택하거나 텍스트를 붙여넣어 주세요"; return; }
+  btn.disabled = true;
+  try {
+    await flush();
+    const pdf = pdfFile && await openPdf(pdfFile);
+    const bl = pdf ? await pdfToBlocks(pdf, (n, N) => msg.textContent = `텍스트 추출 중… ${n}/${N}쪽`) : textToBlocks(txt);
+    if (!bl.some(b => b.k === "p")) throw new Error("empty");
+    msg.textContent = "저장 중…";
+    const title = $("#mTitle").value.trim() || bl.find(b => b.k === "p").t.slice(0, 60);
+    await createPaper(title, bl, pdf ? {src: "pdf", srcFile: pdfFile.name + "|" + pdfFile.size} : {src: "text"}, pdfFile, pdf);
+    overlay($("#modal"), false);
+  } catch (e) { msg.textContent = e.message === "empty" ? EMPTY_PDF : "처리하지 못했어요: " + (e.message || e); }
+  finally { btn.disabled = false; }
+});
+
+// 화면 어디든 PDF를 끌어놓으면 바로 불러오기 (같은 파일명+크기면 기존 논문을 엶)
+const pageDropOff = () => $$(".dlg.on").length > 0;
+addEventListener("dragenter", e => { if (hasFiles(e) && !pageDropOff()) { dragDepth++; $("#dropov").classList.add("on"); } });
+addEventListener("dragleave", e => { if (hasFiles(e) && !(dragDepth = Math.max(0, dragDepth - 1))) $("#dropov").classList.remove("on"); });
+addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener("drop", async e => {
+  dragDepth = 0; $("#dropov").classList.remove("on");
+  if (!hasFiles(e) || e.defaultPrevented || pageDropOff()) return;
+  e.preventDefault();
+  const pdfs = [...e.dataTransfer.files].filter(isPdfFile);
+  if (!pdfs.length) return toast("PDF 파일만 논문으로 불러올 수 있어요 (이미지는 노트 패널에 놓아주세요)");
+  for (const f of pdfs) await importPdf(f);
+});
+async function importPdf(f) {
+  if (Store.pendingDir) return toast("먼저 📁 폴더 다시 연결을 눌러주세요");
+  if (importing) return toast("다른 PDF를 불러오는 중이에요");
+  const key = f.name + "|" + f.size, ex = papers.find(p => p.srcFile === key);
+  if (ex) {
+    if (!(await Store.getFile(ex, "original.pdf"))) await Store.putFile(ex, "original.pdf", f).catch(() => {});   // 원본이 빠진 옛 논문이면 채워 넣기
+    await openPaper(ex); return toast("이미 있는 논문이라 열었어요");
+  }
+  importing = true;
+  try {
+    await flush();
+    const pdf = await openPdf(f), bl = await pdfToBlocks(pdf, (n, N) => setStatus(`PDF 읽는 중… ${n}/${N}쪽`));
+    if (!bl.some(b => b.k === "p")) throw new Error("empty");
+    await createPaper(f.name.replace(/\.pdf$/i, ""), bl, {src: "pdf", srcFile: key}, f, pdf);
+    toast("📄 " + f.name + " 을(를) 불러왔어요");
+  } catch (err) { idleStatus(); toast(err.message === "empty" ? EMPTY_PDF : "PDF를 읽지 못했어요"); }
+  finally { importing = false; }
+}
+
+/* ════════════════ 15. 텍스트 추출 (PDF → 문단) ════════════════ */
+const clean = s => s.replace(/ﬁ/g, "fi").replace(/ﬂ/g, "fl").replace(/ﬀ/g, "ff").replace(/ﬃ/g, "ffi").replace(/[ \t ]+/g, " ").trim();
+function textToBlocks(txt) {
+  txt = txt.replace(/\r/g, "");
+  let parts = txt.split(/\n\s*\n/);
+  if (parts.length === 1 && txt.split("\n").length > 3) parts = txt.split("\n");
+  return parts.map(p => clean(p.replace(/-\n(?=[a-z])/g, "").replace(/\n/g, " "))).filter(Boolean).map(t => ({k: "p", t}));
+}
+async function pdfToBlocks(pdf, onProgress) {
+  const out = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    onProgress?.(n, pdf.numPages);
+    const page = await pdf.getPage(n), W = page.getViewport({scale: 1}).width;
+    const items = (await page.getTextContent()).items.filter(it => it.str?.trim())
+      .map(it => ({x: it.transform[4], y: it.transform[5], w: it.width, h: Math.abs(it.transform[3]) || it.height || 10, s: it.str}));
+    if (!items.length) continue;
+    // 2단 편집 감지: 왼쪽·오른쪽 단에 글자가 고루 있으면 (가로지르는 것 → 왼쪽 → 오른쪽) 순서로
+    const mid = W / 2, chars = a => a.reduce((s, i) => s + i.s.length, 0), tot = chars(items);
+    const L = items.filter(i => i.x + i.w <= mid + 6), R = items.filter(i => i.x >= mid - 6 && i.x + i.w > mid + 6);
+    const S = items.filter(i => !L.includes(i) && !R.includes(i));
+    const groups = chars(L) > tot * .25 && chars(R) > tot * .25 && chars(S) < tot * .2 ? [S, L, R].filter(g => g.length) : [items];
+    out.push({k: "g", t: `p. ${n}`});
+    groups.forEach(g => paras(lines(g)).forEach(t => out.push({k: "p", t})));
+  }
+  return out;
+}
+function lines(items) {   // 글자 조각 → 줄
+  const L = [];
+  for (const it of [...items].sort((a, b) => b.y - a.y || a.x - b.x)) {
+    const ln = L.at(-1);
+    if (ln && Math.abs(ln.y - it.y) < Math.max(2, it.h * .5)) ln.items.push(it); else L.push({y: it.y, items: [it]});
+  }
+  return L.map(l => {
+    l.items.sort((a, b) => a.x - b.x);
+    let s = "", end = null;
+    for (const it of l.items) {
+      if (end !== null && it.x - end > it.h * .15 && !/\s$/.test(s) && !/^\s/.test(it.s)) s += " ";
+      s += it.s; end = it.x + it.w;
+    }
+    return {y: l.y, x0: l.items[0].x, x1: end, h: Math.max(...l.items.map(i => i.h)), s: clean(s)};
+  }).filter(l => l.s);
+}
+function paras(L) {   // 줄 → 문단 (줄 간격·글자 크기·문장 끝으로 판단)
+  if (!L.length) return [];
+  const gaps = []; for (let k = 1; k < L.length; k++) { const g = L[k - 1].y - L[k].y; if (g > 0) gaps.push(g); }
+  gaps.sort((a, b) => a - b);
+  const med = gaps.length ? gaps[Math.floor(gaps.length * .3)] : 12;   // 하위 30% = 보통 줄 간격
+  const maxW = Math.max(...L.map(l => l.x1 - l.x0)), out = [];
+  let cur = L[0].s;
+  for (let k = 1; k < L.length; k++) {
+    const p = L[k - 1], l = L[k], g = p.y - l.y;
+    if (g > med * 1.45 || g < 0 || Math.abs(l.h - p.h) > 1.2 || (/[.!?:。]$/.test(p.s) && p.x1 - p.x0 < maxW * .8)) { out.push(cur); cur = l.s; }
+    else if (/[A-Za-z]-$/.test(cur) && /^[a-z]/.test(l.s)) cur = cur.slice(0, -1) + l.s;   // 하이픈 줄바꿈 잇기
+    else cur += " " + l.s;
+  }
+  out.push(cur);
+  return out.map(clean).filter(t => t && !/^\d{1,4}$/.test(t));   // 쪽 번호만 있는 줄 제거
+}
+
+/* ════════════════ 16. 내보내기 · 가져오기 ════════════════ */
+function exportMd(m = meta) {
+  // Notion 가져오기 호환: ==강조== → **굵게**, 목록 아닌 블록의 들여쓰기 제거(코드블록이 되므로), 원문 링크 → (p. 3)
+  const notes = m.notes.filter(n => n.trim()).map(n => {
+    if (/^```/.test(n.trim())) return n;
+    const {pre, body} = splitBlock(n); if (!isListPre(pre)) n = pre + body;
+    return n.replace(/\s*\[([^\]]*)\]\(#pn-([^)\s]+)\)/g, (_, l, loc) => loc[0] === "p" ? ` (${l})` : "").replace(/==(.+?)==/g, "**$1**");
+  }).join("\n\n");
+  const one = s => s.replace(/\s*\n\s*/g, " ");
+  const quotes = list => list.flatMap(a => ["> " + one(a.text), ...(hasMemo(a) && a.comment?.trim() ? ["", a.comment.trim()] : []), ""]);
+  const parts = [`# ${m.title}`, "", "## 노트", "", notes, "", "## 밑줄", "", ...quotes(byColor(m, "g"))];
+  const concepts = byColor(m, "r"), vocab = byColor(m, "b");
+  if (concepts.length) parts.push("## 개념", "", ...quotes(concepts));
+  if (vocab.length) parts.push("## 단어", "", ...vocab.map(a => `- **${a.text.replace(/\s+/g, " ")}**` + (a.comment?.trim() ? " — " + one(a.comment.trim()) : "")), "");
+  return parts.join("\n");
+}
+function download(filename, data, mime) {
+  const url = URL.createObjectURL(new Blob([data], {type: mime + ";charset=utf-8"}));
+  const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const fileName = s => (s || "paper").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 80);
+const toDataURL = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+
+$("#bMore").addEventListener("click", () => $("#menu").classList.toggle("on"));
+$("#menu").addEventListener("click", async e => {
+  const act = e.target.closest("button")?.dataset.act; if (!act) return;
+  $("#menu").classList.remove("on");
+  if (act === "import") return $("#fJson").click();
+  if (act === "keys") { renderKeys(); return overlay($("#kmodal"), true); }
+  if (!meta) return toast("먼저 논문을 열어주세요");
+  if (act === "md") download(fileName(meta.title) + ".md", exportMd(), "text/markdown");
+  if (act === "copymd") navigator.clipboard.writeText(exportMd()).then(() => toast("Markdown을 복사했어요"), () => toast("복사하지 못했어요"));
+  if (act === "json") {   // 노트에 들어간 이미지도 백업 파일 안에 함께 담기
+    const images = {};
+    for (const [, n] of meta.notes.join("\n").matchAll(/\]\(\.?\/?images\/([^)\s]+)\)/g)) {
+      const b = await Store.getFile(meta, "images/" + n); if (b) images[n] = await toDataURL(b);
+    }
+    download(fileName(meta.title) + ".paper.json", JSON.stringify({v: 2, meta, blocks, images}), "application/json");
+  }
+});
+$("#fJson").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const o = JSON.parse(await f.text()); if (!o.meta || !Array.isArray(o.blocks)) throw 0;
+    await flush();
+    await createPaper(o.meta.title, o.blocks, {annots: o.meta.annots || [], notes: o.meta.notes || [""], src: o.meta.src});
+    for (const [n, du] of Object.entries(o.images || {})) await Store.putFile(meta, "images/" + n, await (await fetch(du)).blob()).catch(() => {});
+    renderNotes(); toast("백업을 불러왔어요");
+  } catch { toast("올바른 백업 파일이 아니에요"); }
+});
+
+/* ════════════════ 17. 저장 폴더 연결 ════════════════ */
+function updDirBtn() {
+  const b = $("#bDir"); b.hidden = !window.showDirectoryPicker || !Store.idb; if (b.hidden) return;
+  [b.textContent, b.title] = Store.dir ? ["📁 " + Store.dir.name, `저장 폴더: ${Store.dir.name} (클릭하면 다른 위치로 변경)`]
+    : Store.pendingDir ? ["📁 폴더 다시 연결", "저장 폴더 접근 허용"]
+    : ["📁 폴더 연결", `앱(HTML)이 있는 위치를 선택 — 그 안에 ${DATA_DIR} 폴더가 생기고 논문마다 폴더가 만들어져요`];
+}
+$("#bDir").addEventListener("click", async e => {
+  try {
+    await flush();
+    if (!(await Store.connect(!Store.pendingDir || e.shiftKey))) return toast("폴더 접근이 허용되지 않았어요");
+    await reloadLibrary(); toast("📁 " + Store.dir.name + " 폴더에 저장돼요");
+  } catch (err) { if (err?.name !== "AbortError") toast("폴더를 연결하지 못했어요"); }
+});
+
+/* ════════════════ 18. 시작 ════════════════ */
+(async () => {
+  renderDoc(); renderNotes();
+  try { await Store.init(); } catch { return setStatus("브라우저 저장소를 열 수 없어요", true); }
+  updDirBtn();
+  if (Store.pendingDir) { showPaper(); return setStatus("폴더 접근 허용 필요"); }
+  await reloadLibrary();
+})();
+})();
+</script>
+</body>
+</html>
