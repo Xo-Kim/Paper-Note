@@ -58,7 +58,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px 
 
 /* ── 본문 ── */
 main{display:grid;grid-template-columns:1fr 6px var(--side);min-height:0}
-#reader{overflow:auto;min-height:0;position:relative}
+#rwrap{position:relative;min-height:0;min-width:0}
+#reader{position:absolute;inset:0;overflow:auto}
 #doc{max-width:760px;margin:0 auto;padding:40px 48px 50vh;font:17px/1.85 var(--serif);word-break:keep-all;overflow-wrap:anywhere}
 #doc ::selection{background:rgba(47,111,222,.22)}
 #doc p.blk{margin:0 0 1em}
@@ -77,6 +78,11 @@ mark.an{background:none;color:inherit;cursor:pointer;padding:0;text-decoration:u
 #doc .page canvas{position:absolute;inset:0;width:100%;height:100%}
 #doc .alayer{position:absolute;inset:0;z-index:1;pointer-events:none}
 #doc .pa{position:absolute;mix-blend-mode:multiply;border-radius:2px}
+/* PDF 어둡게 (다크 모드에서 ◐): 쪽 그림은 색 반전, 사진 영역(canvas.keep)은 원래 색 그대로 */
+:root[data-theme=dark] #doc.pdfdark .page{background:#000}
+:root[data-theme=dark] #doc.pdfdark .page canvas.base{filter:invert(1) hue-rotate(180deg)}
+:root[data-theme=dark] #doc.pdfdark .pa{mix-blend-mode:normal}
+:root:not([data-theme=dark]) #vt [data-dark]{display:none}
 .textLayer{position:absolute;text-align:initial;inset:0;overflow:hidden;line-height:1;text-size-adjust:none;-webkit-text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}
 .textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
 .textLayer span.markedContent{top:0;height:0}
@@ -84,9 +90,8 @@ mark.an{background:none;color:inherit;cursor:pointer;padding:0;text-decoration:u
 .textLayer br::selection{background:transparent}
 .textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:-1;cursor:default;user-select:none}
 .textLayer .endOfContent.active{top:0}
-#vt{position:sticky;top:10px;z-index:6;height:0;display:flex;justify-content:flex-end;padding-right:18px;pointer-events:none}
-#vt[hidden]{display:none}
-#vt .bar{pointer-events:auto;display:flex;gap:2px;align-items:center;background:var(--bar-bg);border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:0 2px 10px rgba(0,0,0,.08);height:34px}
+#vt{position:absolute;top:10px;right:26px;z-index:6}
+#vt .bar{display:flex;gap:2px;align-items:center;background:var(--bar-bg);border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:0 2px 10px rgba(0,0,0,.08);height:34px}
 #vt button{border:0;background:none;border-radius:6px;padding:4px 9px;font-size:12.5px}
 #vt button.on{background:var(--ink);color:var(--on-ink)}
 #vt .sep{width:1px;height:16px;background:var(--line);margin:0 3px}
@@ -251,13 +256,14 @@ aside{background:var(--panel);display:flex;flex-direction:column;min-height:0}
     </div>
   </header>
   <main>
-    <section id="reader">
+    <div id="rwrap">
+      <!-- 보기 툴바는 스크롤 영역 밖에 둬서 상하·좌우로 스크롤해도 제자리에 있음 -->
       <div id="vt" hidden><div class="bar">
         <button data-v="pdf">원문</button><button data-v="text">텍스트</button><span class="sep"></span>
-        <button data-z="-1" title="축소">−</button><button data-z="0" id="zlbl" title="화면 너비에 맞춤">100%</button><button data-z="1" title="확대">＋</button>
+        <button data-z="-1" title="축소">−</button><button data-z="0" id="zlbl" title="화면 너비에 맞춤">100%</button><button data-z="1" title="확대">＋</button><button data-dark title="PDF 어둡게 (사진은 원래 색 유지)">◐</button>
       </div></div>
-      <div id="doc"></div>
-    </section>
+      <section id="reader"><div id="doc"></div></section>
+    </div>
     <div class="resizer" id="rz"></div>
     <aside>
       <div class="tabs">
@@ -486,6 +492,7 @@ addEventListener("beforeunload", () => { if (dirty) flush(); });
 const doc = $("#doc"), reader = $("#reader");
 let pdfDoc = null, viewMode = "text", pdfScale = 1, pdfObs = null, docReady = Promise.resolve();
 let pdfZoom = +ls.get("pn:zoom"); if (!(pdfZoom >= .5 && pdfZoom <= 3)) pdfZoom = 1;
+let pdfDark = ls.get("pn:pdfdark") !== "0";   // 다크 모드에서 PDF 어둡게 (기본 켬)
 const isPdfView = () => viewMode === "pdf" && !!pdfDoc;
 
 function welcome(title, body, btnSel, btnLabel) {
@@ -580,13 +587,16 @@ function updVt() {
   const vt = $("#vt");
   vt.hidden = !(meta && pdfDoc);
   vt.querySelectorAll("[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === viewMode));
-  vt.querySelectorAll("[data-z],.sep").forEach(b => b.style.display = viewMode === "pdf" ? "" : "none");
+  vt.querySelectorAll("[data-z],[data-dark],.sep").forEach(b => b.style.display = viewMode === "pdf" ? "" : "none");
+  vt.querySelector("[data-dark]").classList.toggle("on", pdfDark);
+  doc.classList.toggle("pdfdark", pdfDark);
   $("#zlbl").textContent = Math.round(pdfZoom * 100) + "%";
 }
 function setView(v) { if (!meta) return; viewMode = v; ls.set("pn:view:" + meta.id, v); hideTip(); reader.scrollTop = 0; renderDoc(); }
 $("#vt").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.v) { if (b.dataset.v !== viewMode) setView(b.dataset.v); return; }
+  if ("dark" in b.dataset) { pdfDark = !pdfDark; ls.set("pn:pdfdark", pdfDark ? "1" : "0"); return updVt(); }
   const z = +b.dataset.z, rel = reader.scrollTop / Math.max(1, reader.scrollHeight);
   pdfZoom = z === 0 ? 1 : Math.max(.5, Math.min(3, Math.round((pdfZoom + z * .15) * 100) / 100));
   ls.set("pn:zoom", pdfZoom);
@@ -614,13 +624,14 @@ async function renderPage(div, pdf) {
   const n = +div.dataset.page, page = await pdf.getPage(n), vp = page.getViewport({scale: pdfScale});
   const dpr = Math.min(devicePixelRatio || 1, 2);
   div.style.width = vp.width + "px"; div.style.height = vp.height + "px"; div.style.setProperty("--scale-factor", pdfScale);
-  const cv = document.createElement("canvas"); cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+  const cv = document.createElement("canvas"); cv.className = "base"; cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
   const al = document.createElement("div"); al.className = "alayer";
   const tl = document.createElement("div"); tl.className = "textLayer";
   div.replaceChildren(cv, al, tl);
   drawPdfAnnots(n);
   try {
     await page.render({canvasContext: cv.getContext("2d"), viewport: page.getViewport({scale: pdfScale * dpr})}).promise;
+    await keepPhotos(cv, page, vp, dpr);
     await pdfjsLib.renderTextLayer({textContentSource: await page.getTextContent(), container: tl, viewport: vp, textDivs: []}).promise;
     const eoc = document.createElement("div"); eoc.className = "endOfContent"; tl.appendChild(eoc);
   } catch {}
@@ -629,6 +640,83 @@ function drawPdfAnnots(n) {
   const al = doc.querySelector(`.page[data-page="${n}"] .alayer`); if (!al || !meta) return;
   al.innerHTML = meta.annots.filter(a => a.pdf).flatMap(a => a.pdf.filter(r => r.p === n).map(r =>
     `<div class="pa" data-aid="${a.id}" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;border-bottom:2px solid ${COLORS[a.color].line}"></div>`)).join("");
+}
+
+/* ── PDF 어둡게: 쪽 전체는 CSS로 색 반전, 사진은 원래 색 ──
+ * 사진 영역만 반전 안 된 캔버스(canvas.keep)에 복사해 위에 겹침.
+ * 흰 바탕 그래프·도표 이미지는 글자처럼 반전하는 게 자연스러워서 그대로 반전되게 둠 */
+async function keepPhotos(cv, page, vp, dpr) {
+  const ctx = cv.getContext("2d");
+  const rects = (await imageRects(page, vp).catch(() => []))
+    .map(parts => parts.map(r => r.map(v => Math.round(v * dpr)))).filter(parts => isPhoto(ctx, parts)).flat();
+  if (!rects.length) return;
+  const kp = document.createElement("canvas"); kp.className = "keep"; kp.width = cv.width; kp.height = cv.height;
+  const c = kp.getContext("2d");
+  for (const [x, y, w, h] of rects) c.drawImage(cv, x, y, w, h, x, y, w, h);
+  cv.after(kp);
+}
+// 쪽 안의 그림 영역 → 그림마다 [x, y, w, h] 이미지 조각 목록 (화면 px)
+// PDF 그리기 명령을 따라가며 좌표 변환·잘라내기(clip)를 계산하고, 겹치거나 붙은 이미지는 그림 하나로 묶음
+// (여러 장으로 된 그림이 조각마다 다르게 보이지 않게). 쪽 대부분을 덮는 그림(스캔본)은 제외 → 스캔 PDF도 어둡게
+async function imageRects(page, vp) {
+  const {fnArray, argsArray} = await page.getOperatorList(), O = pdfjsLib.OPS, T = pdfjsLib.Util.transform;
+  const IMG = [O.paintImageXObject, O.paintInlineImageXObject, O.paintJpegXObject];
+  const box = (m, x0, y0, x1, y1) => {   // 사용자 좌표 사각형 → 화면 [x0, y0, x1, y1]
+    const xs = [x0, x1, x0, x1].map((x, i) => m[0] * x + m[2] * (i < 2 ? y0 : y1) + m[4]);
+    const ys = [x0, x1, x0, x1].map((x, i) => m[1] * x + m[3] * (i < 2 ? y0 : y1) + m[5]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  };
+  const cut = (a, b) => [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])];
+  let m = vp.transform, clip = [0, 0, vp.width, vp.height], path = null;
+  const stack = [], boxes = [];
+  fnArray.forEach((fn, k) => {
+    const a = argsArray[k];
+    if (fn === O.save) stack.push([m, clip]);
+    else if (fn === O.paintFormXObjectBegin) {
+      stack.push([m, clip]);
+      if (Array.isArray(a?.[0])) m = T(m, a[0]);
+      if (Array.isArray(a?.[1])) clip = cut(clip, box(m, ...a[1]));
+    }
+    else if (fn === O.restore || fn === O.paintFormXObjectEnd) [m, clip] = stack.pop() || [m, clip];
+    else if (fn === O.transform) m = T(m, a);
+    else if (fn === O.constructPath) {   // a[2] = 경로 범위 [minX, maxX, minY, maxY]
+      const mm = a?.[2];
+      path = mm?.length === 4 && mm.every(isFinite) ? box(m, mm[0], mm[2], mm[1], mm[3]) : null;
+    }
+    else if ((fn === O.clip || fn === O.eoClip) && path) clip = cut(clip, path);
+    else if (IMG.includes(fn)) {   // 이미지는 단위 정사각형(0~1)에 그려지고, 현재 clip만큼만 보임
+      const r = cut(box(m, 0, 0, 1, 1), clip);
+      if (r[2] - r[0] > 4 && r[3] - r[1] > 4) boxes.push(r);
+    }
+  });
+  // 겹치거나 8px 안으로 붙은 이미지끼리 한 그림으로 묶기 (더 묶을 게 없을 때까지)
+  const near = (a, b) => a[0] <= b[2] + 8 && b[0] <= a[2] + 8 && a[1] <= b[3] + 8 && b[1] <= a[3] + 8;
+  let groups = boxes.map(b => ({r: b, items: [b]})), merged = true;
+  while (merged) {
+    merged = false; const next = [];
+    for (let g of groups) {
+      for (let i = next.length - 1; i >= 0; i--) if (near(next[i].r, g.r)) {
+        const h = next.splice(i, 1)[0], a = h.r, b = g.r;
+        g = {r: [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])], items: [...h.items, ...g.items]};
+        merged = true;
+      }
+      next.push(g);
+    }
+    groups = next;
+  }
+  // 그림마다 [x, y, w, h] 이미지 조각 목록
+  return groups.filter(({r}) => (r[2] - r[0]) * (r[3] - r[1]) < vp.width * vp.height * .85)
+    .map(g => g.items.map(([x0, y0, x1, y1]) => [x0, y0, x1 - x0, y1 - y0]));
+}
+// 사진인지 판단 (그림 단위): 이미지 조각들의 픽셀 중 흰색에 가까운 게 35% 이상이면 그래프·도표로 봄
+function isPhoto(ctx, parts) {
+  let light = 0, n = 0;
+  for (const [x, y, w, h] of parts) {
+    if (w < 1 || h < 1) continue;
+    const d = ctx.getImageData(x, y, w, h).data, step = 4 * Math.max(1, Math.floor(w * h / 5000));
+    for (let i = 0; i < d.length; i += step, n++) if (d[i] > 225 && d[i + 1] > 225 && d[i + 2] > 225) light++;
+  }
+  return n > 0 && light / n < .35;
 }
 
 // PDF 텍스트 레이어는 대체 글꼴로 그려져 글자 위치가 1~2자 어긋날 수 있음 → 선택을 단어 경계에 맞춤
@@ -1273,8 +1361,8 @@ document.addEventListener("keydown", e => {
   } else if (meta && selSet.size) onSelKey(e);
 });
 document.addEventListener("mousedown", e => {
-  if (popA && !pop.contains(e.target) && !e.target.closest("mark.an")) hidePop();
-  if (!e.target.closest(".menu-wrap")) $("#menu").classList.remove("on");
+  if (popA && !pop.contains(e.target) && !e.target.closest?.("mark.an")) hidePop();
+  if (!e.target.closest?.(".menu-wrap")) $("#menu").classList.remove("on");
   if (selSet.size && !notesEl.contains(e.target)) clearSel();
 });
 
