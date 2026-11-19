@@ -224,6 +224,19 @@ aside{background:var(--panel);display:flex;flex-direction:column;min-height:0}
 .kbtn{min-width:96px;background:var(--hover2);border-radius:7px;border-bottom-width:1px;padding:5px 10px;font-size:12.5px}
 .kbtn.rec{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
 .kbtn.none{color:var(--faint)}
+/* 찾기 (Ctrl+F) */
+#findbar{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:45;display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px 6px}
+#findbar[hidden]{display:none}
+#fq{width:240px;border:1px solid var(--line);background:var(--field);border-radius:7px;padding:5px 8px;outline:none}
+#fq:focus{border-color:var(--accent)}
+#fcount{min-width:48px;text-align:center;font-size:12px;color:var(--muted)}
+#findbar button{border:0;background:none;border-radius:6px;padding:4px 8px}
+#findbar button:hover{background:var(--hover)}
+#findbar .fscope{display:flex;gap:1px;background:var(--hover);border-radius:8px;padding:2px}
+#findbar .fscope button{padding:3px 8px;font-size:12px;color:var(--muted);white-space:nowrap}
+#findbar .fscope button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+#findbar .fscope small{margin-left:3px;opacity:.75}
+::highlight(pn-find){background-color:rgba(255,196,0,.6)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--float);color:#fff;padding:9px 16px;border-radius:9px;z-index:90;font-size:13px;display:none}
 #toast.on{display:block}
 #dropov{position:fixed;inset:10px;border:2.5px dashed var(--accent);border-radius:16px;background:var(--drop-bg);z-index:95;display:none;place-items:center;font-size:18px;font-weight:600;color:var(--accent);pointer-events:none}
@@ -311,6 +324,12 @@ aside{background:var(--panel);display:flex;flex-direction:column;min-height:0}
   <div class="mfoot"><button class="ib" id="kReset">기본값으로</button><button class="ib primary" id="kClose">완료</button></div>
 </div>
 <input type="file" id="fJson" accept="application/json,.json" hidden>
+<div id="findbar" hidden>
+  <input id="fq" placeholder="본문 · 노트 · 필기에서 찾기" spellcheck="false">
+  <span class="fscope"><button data-s="all">전체</button><button data-s="doc">본문</button><button data-s="note">노트</button><button data-s="memo">필기</button></span>
+  <span id="fcount"></span>
+  <button data-f="-1" title="이전 (Shift+Enter)">↑</button><button data-f="1" title="다음 (Enter)">↓</button><button data-f="0" title="닫기 (Esc)">✕</button>
+</div>
 <div id="toast"></div>
 <div id="dropov">📄 PDF를 놓으면 논문으로 불러와요</div>
 
@@ -620,7 +639,11 @@ function updVt() {
   doc.classList.toggle("pdfdark", pdfDark);
   $("#zlbl").textContent = Math.round(pdfZoom * 100) + "%";
 }
-function setView(v) { if (!meta) return; viewMode = v; ls.set("pn:view:" + meta.id, v); hideTip(); reader.scrollTop = 0; renderDoc(); }
+function setView(v) {
+  if (!meta) return;
+  viewMode = v; ls.set("pn:view:" + meta.id, v); hideTip(); reader.scrollTop = 0; renderDoc();
+  if (!$("#findbar").hidden) docReady.then(runFind);   // 찾기 중이면 바뀐 보기에서 다시 찾기
+}
 $("#vt").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.v) { if (b.dataset.v !== viewMode) setView(b.dataset.v); return; }
@@ -1378,9 +1401,132 @@ function quoteToNotes(text, comment, loc) {
   meta.notes.push(""); touch(); switchTab("notes"); focusBlock(meta.notes.length - 1);
 }
 
+/* ════════════════ 11-1. 찾기 (Ctrl+F) ════════════════
+ * 본문(PDF는 아직 안 그린 쪽까지) · 노트 · 개념/단어 필기를 한 번에 찾음.
+ * 브라우저 기본 찾기는 안 그린 PDF 쪽이나 다른 탭에 숨은 필기를 못 찾아서 직접 구현.
+ * 찾은 위치는 CSS Highlight API로 표시 (DOM을 건드리지 않음) */
+const fq = $("#fq");
+let found = [], foundAt = -1, findTimer = null, pageTexts = new Map();
+// 찾는 범위: 전체 · 본문 · 노트 · 필기. 찾기는 늘 전부 하고(allFound) 범위에 맞는 것만 오가며 봄
+let allFound = [], findScope = ls.get("pn:fscope") || "all";
+const SCOPES = {all: "전체", doc: "본문", note: "노트", memo: "필기"};
+const scopeOf = f => f.kind === "pdf" ? "doc" : f.kind;
+const lc = s => s.toLowerCase();
+const FIND_SKIP = ".hd, mjx-container";   // 노트의 ⋮⋮ 손잡이, 수식 그림은 제외
+function textNodes(root) {   // root 안 글자 조각들과, 이어 붙인 전체 글자
+  const nodes = [], tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n, text = "";
+  while ((n = tw.nextNode())) { if (n.parentElement?.closest(FIND_SKIP)) continue; nodes.push([n, text.length]); text += n.data; }
+  return [nodes, text];
+}
+function countIn(text, q) { let c = 0, i = 0; text = lc(text); while ((i = text.indexOf(q, i)) >= 0) { c++; i += q.length; } return c; }
+function rangeOf(root, q, j) {   // root 안에서 q의 j번째 위치 → Range
+  const [nodes, raw] = textNodes(root), text = lc(raw);
+  let i = text.indexOf(q); for (let k = 0; k < j && i >= 0; k++) i = text.indexOf(q, i + q.length);
+  if (i < 0) return null;
+  const at = pos => { for (let k = nodes.length - 1; k >= 0; k--) if (nodes[k][1] <= pos) return [nodes[k][0], pos - nodes[k][1]]; };
+  const r = document.createRange(); r.setStart(...at(i)); r.setEnd(...at(i + q.length));
+  return r;
+}
+// PDF 쪽 글자 = 텍스트 레이어에 그려질 글자 조각을 이어 붙인 것 (그래서 쪽을 그린 뒤 같은 순번으로 찾을 수 있음)
+async function pageText(p) {
+  if (pageTexts.doc !== pdfDoc) pageTexts = Object.assign(new Map(), {doc: pdfDoc});
+  if (!pageTexts.has(p)) pageTexts.set(p, (await (await pdfDoc.getPage(p)).getTextContent()).items.map(it => it.str).join(""));
+  return pageTexts.get(p);
+}
+async function collect(q) {   // 찾은 위치 목록: 본문 → 노트 → 개념·단어 필기 순
+  const out = [], add = (n, f) => { for (let j = 0; j < n; j++) out.push({...f, j}); };
+  if (isPdfView()) for (let p = 1; p <= pdfDoc.numPages; p++) add(countIn(await pageText(p), q), {kind: "pdf", p});
+  else blocks.forEach((b, i) => b.k === "p" && add(countIn(b.t, q), {kind: "doc", i}));
+  notesEl.querySelectorAll(".nb").forEach(d => add(countIn(textNodes(d)[1], q), {kind: "note", i: +d.dataset.i}));
+  // 필기: 개념·단어 탭 항목마다 밑줄 그은 단어/구절(.q/.w) → 적어 둔 필기(.c) 순
+  for (const [tab, c] of [["concept", "r"], ["vocab", "b"]]) for (const a of byColor(meta, c)) {
+    add(countIn(a.text, q), {kind: "memo", tab, id: a.id, sel: ".q, .w"});
+    add(countIn(a.comment || "", q), {kind: "memo", tab, id: a.id, sel: ".c"});
+  }
+  return out;
+}
+
+function openFind() {
+  if (ed >= 0) { ed = -1; renderNotes(); }   // 편집 중인 노트 블록도 찾을 수 있게 닫음
+  const fb = $("#findbar"), s = getSelection().toString().trim();
+  if (s && s.length < 80 && !s.includes("\n")) fq.value = s;
+  fb.hidden = false; fq.focus(); fq.select();
+  if (fq.value.trim()) runFind();
+}
+function closeFind() {
+  $("#findbar").hidden = true; found = allFound = []; foundAt = -1; clearTimeout(findTimer);
+  CSS.highlights?.delete("pn-find"); updScopes();
+}
+async function runFind() {
+  clearTimeout(findTimer); findTimer = null;
+  const q = lc(fq.value.trim()); found = allFound = []; foundAt = -1; CSS.highlights?.delete("pn-find");
+  if (!q || !meta) { $("#fcount").textContent = ""; return updScopes(); }
+  const res = await collect(q);
+  if (lc(fq.value.trim()) !== q) return;   // 찾는 동안 검색어가 바뀜
+  allFound = res; applyScope();
+}
+// 범위 버튼: 고른 범위 표시 + 범위마다 찾은 개수
+function updScopes() {
+  $$("#findbar [data-s]").forEach(b => {
+    const s = b.dataset.s, n = s === "all" ? allFound.length : allFound.filter(f => scopeOf(f) === s).length;
+    b.classList.toggle("on", s === findScope);
+    b.innerHTML = SCOPES[s] + (fq.value.trim() ? `<small>${n}</small>` : "");
+  });
+}
+function applyScope() {
+  found = findScope === "all" ? allFound : allFound.filter(f => scopeOf(f) === findScope);
+  foundAt = -1; CSS.highlights?.delete("pn-find"); updScopes();
+  if (found.length) showFound(0); else $("#fcount").textContent = fq.value.trim() ? "없음" : "";
+}
+async function showFound(k) {
+  if (!found.length) return;
+  foundAt = (k + found.length) % found.length;
+  const f = found[foundAt], q = lc(fq.value.trim()), me = foundAt;
+  $("#fcount").textContent = `${foundAt + 1}/${found.length}`;
+  let root;
+  if (f.kind === "doc") root = blockEl(f.i);
+  else if (f.kind === "pdf") {   // 아직 안 그린 쪽이면 그 쪽으로 가서 그려질 때까지 기다림
+    const pg = doc.querySelector(`.page[data-page="${f.p}"]`); if (!pg) return;
+    if (!pg.querySelector(".textLayer span")) {
+      reader.scrollTop = pg.offsetTop - 20;
+      renderPage(pg, pdfDoc);   // 화면에 들어와 그려지길 기다리지 않고 바로 그림 (이미 그리는 중이면 무시됨)
+      for (let t = 0; t < 50 && !pg.querySelector(".textLayer span"); t++) await new Promise(r => setTimeout(r, 100));
+      if (me !== foundAt) return;
+    }
+    root = pg.querySelector(".textLayer");
+  } else if (f.kind === "note") { switchTab("notes"); root = notesEl.querySelector(`.nb[data-i="${f.i}"]`); }
+  else { switchTab(f.tab); root = $(`#l-${f.tab} .ai[data-id="${f.id}"]`)?.querySelector(f.sel); }
+  const r = root && rangeOf(root, q, f.j); if (!r) return;
+  CSS.highlights?.set("pn-find", new Highlight(r));
+  // 찾은 곳이 화면 위쪽 1/3쯤 오게 스크롤 (본문은 왼쪽, 노트·필기는 오른쪽 패널)
+  const box = f.kind === "doc" || f.kind === "pdf" ? reader : root.closest(".pane");
+  const rr = r.getBoundingClientRect(), br = box.getBoundingClientRect();
+  const left = rr.left < br.left || rr.right > br.right ? rr.left - br.left - box.clientWidth / 3 : 0;
+  box.scrollBy({top: rr.top - br.top - box.clientHeight / 3, left});
+}
+fq.addEventListener("input", () => { clearTimeout(findTimer); findTimer = setTimeout(runFind, 250); });
+fq.addEventListener("keydown", async e => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === "Escape") { e.preventDefault(); return closeFind(); }
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (findTimer || !found.length) return runFind();   // 입력 직후라 아직 안 찾았으면 지금 찾기
+  showFound(foundAt + (e.shiftKey ? -1 : 1));
+});
+$("#findbar").addEventListener("click", e => {
+  const s = e.target.closest("[data-s]");
+  if (s) { findScope = s.dataset.s; ls.set("pn:fscope", findScope); fq.focus(); return findTimer ? runFind() : applyScope(); }
+  const b = e.target.closest("[data-f]"); if (!b) return;
+  if (b.dataset.f === "0") closeFind(); else showFound(foundAt + +b.dataset.f);
+});
+$("#findbar").addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault(); });   // 버튼 눌러도 입력칸 포커스 유지
+updScopes();
+
 /* ════════════════ 12. 전역 키 · 마우스, 탭, 크기 조절 ════════════════ */
 document.addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); clearTimeout(saveTimer); flush(); return toast("저장했어요"); }
+  if ((e.ctrlKey || e.metaKey) && e.code === "KeyF" && meta && !recAct) { e.preventDefault(); return openFind(); }
   // 실행 취소·다시 실행. 한글 입력 상태에서도 되게 키 위치(e.code)로 판단. 제목·필기 입력칸은 브라우저 기본 동작
   if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === "KeyZ" || e.code === "KeyY") && !recAct && meta) {
     if (e.target.closest?.("input, textarea") && !notesEl.contains(e.target)) return;
@@ -1450,6 +1596,7 @@ $("#lib").addEventListener("click", async e => {
 });
 
 function showPaper() {
+  closeFind();
   const ti = $("#title"); ti.disabled = !meta; ti.value = meta ? meta.title : "";
   renderDoc(); renderNotes(); renderLists();
 }
